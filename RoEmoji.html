@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ragnarok: Prontera Market Edition</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script src="https://js.puter.com/v2/"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #000; overflow: hidden; font-family: 'Arial', sans-serif; user-select: none; }
+        #game-container { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        
+        /* RO 經典水藍色半透明 UI */
+        .ro-panel {
+            position: absolute; background: rgba(225, 235, 250, 0.94);
+            border: 2px solid #5b7da3; border-radius: 4px; color: #1c2d42;
+            font-size: 12px; box-shadow: 2px 2px 6px rgba(0,0,0,0.4); padding: 8px;
+        }
+        
+        /* 狀態欄 */
+        #status-window { top: 10px; left: 10px; width: 190px; }
+        .ro-bar { height: 8px; background: #bdc3c7; border-radius: 2px; margin: 3px 0; overflow: hidden; }
+        .ro-hp { height: 100%; width: 100%; background: #2ecc71; }
+        .ro-sp { height: 100%; width: 100%; background: #3498db; }
+        .ro-exp { height: 100%; width: 0%; background: #9b59b6; }
+
+        /* 特技欄 */
+        #skill-window { bottom: 10px; right: 10px; width: 160px; }
+        .skill-btn { display: flex; justify-content: space-between; align-items: center; background: #34495e; color: white; border: 1px solid #5b7da3; padding: 6px; margin: 4px 0; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .skill-btn:active { background: #e67e22; }
+
+        /* 物品背包與資產欄 */
+        #inventory-window { top: 180px; right: 10px; width: 170px; }
+        .inv-slot { background: rgba(255,255,255,0.6); border: 1px dashed #5b7da3; padding: 4px; margin: 3px 0; border-radius: 3px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
+        .use-btn { background: #2ecc71; color: white; border: none; padding: 2px 5px; border-radius: 2px; cursor: pointer; font-size: 10px; }
+
+        /* 互動商店視窗 (Shop UI) */
+        #shop-window { top: 25%; left: 35%; width: 280px; display: none; z-index: 100; }
+        .shop-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.7); padding: 6px; margin: 4px 0; border-radius: 3px; border: 1px solid #bdc3c7; }
+        .shop-btn { background: #e67e22; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .shop-btn.sell { background: #2980b9; }
+
+        /* 屬性配點欄 */
+        #stat-window { top: 10px; right: 10px; width: 160px; }
+        .stat-row { display: flex; justify-content: space-between; align-items: center; margin: 3px 0; }
+        .stat-btn { background: #5b7da3; color: white; border: none; border-radius: 2px; width: 18px; height: 18px; cursor: pointer; font-weight: bold; }
+
+        /* 系統存檔欄 (全新加入) */
+        #save-window { top: 310px; right: 10px; width: 170px; }
+        .save-btn { width: 100%; background: #5b7da3; color: white; border: 1px solid #34495e; padding: 4px 0; margin: 3px 0; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: 11px; }
+        .save-btn:hover { background: #4a6b90; }
+        .save-btn.gdrive { background: #27ae60; }
+        .save-btn.gdrive:hover { background: #219653; }
+
+        /* 聊天室 */
+        #chat-window { bottom: 10px; left: 10px; width: 280px; height: 120px; display: flex; flex-direction: column; }
+        #chat-log { flex: 1; overflow-y: auto; font-size: 11px; margin-bottom: 3px; background: rgba(255,255,255,0.5); padding: 4px; }
+        #chat-input { border: 1px solid #5b7da3; padding: 3px; font-size: 11px; outline: none; }
+
+        /* 行動端虛擬搖桿 */
+        .mobile-ui { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 30px; box-sizing: border-box; pointer-events: none; }
+        .joystick-zone { width: 90px; height: 90px; background: rgba(255, 255, 255, 0.3); border: 2px solid #fff; border-radius: 50%; position: relative; pointer-events: auto; }
+        .joystick-stick { width: 36px; height: 36px; background: #5b7da3; border-radius: 50%; position: absolute; top: 27px; left: 27px; }
+    </style>
+</head>
+<body>
+
+<div id="game-container"></div>
+
+<div id="status-window" class="ro-panel">
+    <div style="font-weight: bold;" id="job-title">🧙‍♂️ 冒險者 (Lv.1)</div>
+    <div>HP: <span id="hp-text">100/100</span></div>
+    <div class="ro-bar"><div id="hp-fill" class="ro-hp"></div></div>
+    <div>SP: <span id="sp-text">40/40</span></div>
+    <div class="ro-bar"><div id="sp-fill" class="ro-sp"></div></div>
+    <div>EXP: <span id="exp-text">0%</span></div>
+    <div class="ro-bar"><div id="exp-fill" class="ro-exp"></div></div>
+    <div style="margin-top: 4px; font-weight: bold; color: #d35400;">💰 Zeny: <span id="zeny-text">500</span> z</div>
+</div>
+
+<div id="stat-window" class="ro-panel">
+    <div style="font-weight: bold; border-bottom: 1px solid #5b7da3; padding-bottom: 2px; margin-bottom: 4px;">素質 (Status)</div>
+    <div>剩餘點數: <span id="stat-pts">5</span></div>
+    <div class="stat-row"><span>STR (力量): <b id="p-str">5</b></span><button class="stat-btn" onclick="addStat('str')">+</button></div>
+    <div class="stat-row"><span>AGI (敏捷): <b id="p-agi">5</b></span><button class="stat-btn" onclick="addStat('agi')">+</button></div>
+    <div class="stat-row"><span>VIT (體質): <b id="p-vit">5</b></span><button class="stat-btn" onclick="addStat('vit')">+</button></div>
+</div>
+
+<div id="inventory-window" class="ro-panel">
+    <div style="font-weight: bold; border-bottom: 1px solid #5b7da3; padding-bottom: 2px; margin-bottom: 4px;">背包與裝備 (Bag)</div>
+    <div class="inv-slot"><span>武器:</span><span id="eq-weapon" style="color:#d35400;">🪵 幼木棒</span></div>
+    <div class="inv-slot"><span>結晶:</span><span id="inv-loot">結晶 x0</span></div>
+    <div class="inv-slot"><span>藍水:</span><span><b id="inv-blue-pot">x0</b> <button class="use-btn" onclick="useBluePotion()">使用</button></span></div>
+</div>
+
+<div id="save-window" class="ro-panel">
+    <div style="font-weight: bold; border-bottom: 1px solid #5b7da3; padding-bottom: 2px; margin-bottom: 4px;">💾 儲存與同步 (Save)</div>
+    <button class="save-btn" onclick="exportLocalSave()">匯出本地存檔 (.json)</button>
+    <button class="save-btn" onclick="document.getElementById('import-file').click()">匯入本地存檔</button>
+    <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importLocalSave(event)">
+    <div style="border-top: 1px dashed #5b7da3; margin: 4px 0;"></div>
+    <button class="save-btn gdrive" id="gdrive-login-btn" onclick="handleAuthClick()">🔗 登入 Google 帳戶</button>
+    <button class="save-btn gdrive" id="gdrive-save-btn" onclick="uploadToDrive()" style="display:none;">☁️ 儲存至雲端硬碟</button>
+    <button class="save-btn gdrive" id="gdrive-load-btn" onclick="loadFromDrive()" style="display:none;">🔄 自雲端硬碟載入</button>
+</div>
+
+<div id="shop-window" class="ro-panel">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #5b7da3; padding-bottom: 4px; margin-bottom: 8px;">
+        <span id="shop-title" style="font-weight: bold; font-size: 14px;">🏪 互動商店</span>
+        <button onclick="closeShop()" style="background:#e74c3c; color:white; border:none; padding:2px 6px; border-radius:2px; cursor:pointer;">關閉</button>
+    </div>
+    <div id="shop-content"></div>
+</div>
+
+<div id="skill-window" class="ro-panel">
+    <div style="font-weight: bold; border-bottom: 1px solid #5b7da3; padding-bottom: 2px; margin-bottom: 4px;">特技欄 (Skills)</div>
+    <div class="skill-btn" onclick="triggerBashSkill()">
+        <span>⚔️ 狂擊</span>
+        <span style="font-size: 10px; color:#95a5a6;">Cost: 15 SP</span>
+    </div>
+</div>
+
+<div id="chat-window" class="ro-panel">
+    <div id="chat-log"></div>
+    <input type="text" id="chat-input" placeholder="輸入聊天訊息..." onkeydown="sendPlayerChat(event)">
+</div>
+
+<div class="mobile-ui">
+    <div class="joystick-zone" id="joystick"><div class="joystick-stick" id="stick"></div></div>
+</div>
+
+<script>
+    // ======================= Google API 設定資訊 =======================
+    const CLIENT_ID = '375971288943-097rhbub5h2d06f1g5lqs60in6pofj22.apps.googleusercontent.com';
+    const SCOPES = 'https://www.googleapis.com/auth/drive';
+    const SAVE_FILE_NAME = 'ro_market_save.json';
+    
+    let tokenClient;
+    let accessToken = null;
+
+    const config = {
+        type: Phaser.AUTO,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        parent: 'game-container',
+        physics: { default: 'arcade', arcade: { y: 0 } },
+        scene: { preload: preload, create: create, update: update }
+    };
+
+    const game = new Phaser.Game(config);
+    let player, playerOutfit;
+    
+    // 擴充包含貨幣（Zeny）與藥水儲備的資料結構
+    let playerData = {
+        level: 1, exp: 0, nextExp: 100,
+        hp: 100, maxHp: 100,
+        sp: 40, maxSp: 40,
+        str: 5, agi: 5, vit: 5, points: 5,
+        baseAtk: 10, bonusAtk: 0, 
+        lootCount: 0, bluePotions: 2, zeny: 500,
+        lastAttackTime: 0,
+        weaponText: "🪵 幼木棒", // 新增追蹤武器文字以便存檔
+        get attackCooldown() { return Math.max(250, 1000 - (this.agi * 45)); }
+    };
+
+    let targetPointer = null, monsters, cursors, aiPlayers = [], npcs;
+    let joystickDelta = { x: 0, y: 0 }, isJoystickActive = false;
+
+    function preload() {}
+
+    function create() {
+        const scene = this;
+        scene.physics.world.setBounds(0, 0, 2000, 2000);
+
+        // 1. 純綠色大地底層
+        scene.add.rectangle(1000, 1000, 2000, 2000, 0x3e7e43);
+
+        // --- 2. 劃分城鎮安全區 (左上角) ---
+        const townZone = scene.add.graphics();
+        townZone.fillStyle(0x7f8c8d, 0.3); // 鋪設城鎮輕微地磚感
+        townZone.fillRect(0, 0, 400, 400);
+        scene.add.text(20, 20, "⛲ 普隆德拉邊境小鎮 (安全區)", { font: "bold 16px Arial", fill: "#fff", backgroundColor: "rgba(0,0,0,0.5)", padding: 4 });
+
+        // 散落一些野外樹木 (避開城鎮)
+        for(let i=0; i<15; i++) {
+            let tx = Phaser.Math.Between(450, 1950);
+            let ty = Phaser.Math.Between(450, 1950);
+            scene.add.text(tx, ty, "🌳", { font: "30px Arial" }).setAlpha(0.6);
+        }
+
+        // --- 3. 配置 NPC 買賣商家（設置物理靜態體，具備點擊與鄰近提示） ---
+        npcs = scene.physics.add.staticGroup();
+
+        // 武器商人
+        const weaponNpc = scene.add.container(150, 180);
+        weaponNpc.add(scene.add.text(-20, -20, "⚔️", { font: "36px Arial" }));
+        weaponNpc.add(scene.add.text(-35, 20, "武器商人", { font: "bold 12px Arial", fill: "#f1c40f", backgroundColor: "#000" }));
+        scene.physics.world.enable(weaponNpc, Phaser.Physics.Arcade.STATIC_BODY);
+        weaponNpc.body.setSize(50, 50);
+        weaponNpc.setData('type', 'weapon');
+        npcs.add(weaponNpc);
+
+        // 道具商人
+        const itemNpc = scene.add.container(280, 180);
+        itemNpc.add(scene.add.text(-20, -20, "🧪", { font: "36px Arial" }));
+        itemNpc.add(scene.add.text(-35, 20, "道具商人", { font: "bold 12px Arial", fill: "#2ecc71", backgroundColor: "#000" }));
+        scene.physics.world.enable(itemNpc, Phaser.Physics.Arcade.STATIC_BODY);
+        itemNpc.body.setSize(50, 50);
+        itemNpc.setData('type', 'item');
+        npcs.add(itemNpc);
+
+        // --- 4. 玩家初始化 ---
+        const playerText = scene.add.text(-20, -20, "🧍", { font: "40px Arial" });
+        playerOutfit = scene.add.text(-25, -45, "🧙‍♂️", { font: "28px Arial" });
+        player = scene.add.container(200, 300, [playerText, playerOutfit]); // 出生在城鎮安全區
+        scene.physics.world.enable(player);
+        player.body.setCollideWorldBounds(true).setSize(45,45);
+
+        // 阻擋玩家與 NPC 重疊穿透
+        scene.physics.add.collider(player, npcs, handleNpcInteract, null, this);
+
+        scene.cameras.main.setBounds(0, 0, 2000, 2000).startFollow(player, true, 0.1, 0.1);
+
+        // 生成野外怪物
+        monsters = scene.physics.add.group();
+        for(let i=0; i<15; i++) spawnMonster(scene);
+
+        cursors = scene.input.keyboard.createCursorKeys();
+        scene.input.on('pointerdown', (pointer) => {
+            if (pointer.button === 0 && !isJoystickActive && pointer.y > 150 && pointer.x < window.innerWidth - 180) {
+                targetPointer = scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
+            }
+        });
+
+        // 自動自然回魔計時器
+        scene.time.addEvent({
+            delay: 3000, loop: true,
+            callback: () => {
+                if (playerData.hp > 0) {
+                    playerData.sp = Math.min(playerData.maxSp, playerData.sp + 5);
+                    updateUI();
+                }
+            }
+        });
+
+        setupJoystick();
+        updateUI();
+        logChat("系統", "歡迎來到普隆德拉邊境！走到 NPC 商人身邊即可開啟買賣介面。");
+        initPuterAIPlayers(scene);
+        
+        // 初始化 Google API 機制
+        gapiLoaded();
+        gisLoaded();
+    }
+
+    function update(time) {
+        const speed = 210;
+        let vx = 0, vy = 0;
+
+        if (cursors.left.isDown) vx = -speed;
+        else if (cursors.right.isDown) vx = speed;
+        if (cursors.up.isDown) vy = -speed;
+        else if (cursors.down.isDown) vy = speed;
+
+        if (vx === 0 && vy === 0 && (joystickDelta.x !== 0 || joystickDelta.y !== 0)) {
+            vx = joystickDelta.x * speed; vy = joystickDelta.y * speed; targetPointer = null;
+        }
+
+        if (vx === 0 && vy === 0 && targetPointer) {
+            const distance = Phaser.Math.Distance.Between(player.x, player.y, targetPointer.x, targetPointer.y);
+            if (distance > 12) {
+                this.physics.moveTo(player, targetPointer.x, targetPointer.y, speed);
+            } else { player.body.setVelocity(0); targetPointer = null; }
+        } else { player.body.setVelocity(vx, vy); }
+
+        // 戰鬥常規檢索 (城鎮外有效)
+        monsters.getChildren().forEach(monster => {
+            if (!monster.active) return;
+            if (Phaser.Math.Distance.Between(player.x, player.y, monster.x, monster.y) < 65) {
+                handleBattleLoop(this, player, playerData, monster, time, true);
+            }
+        });
+    }
+
+    // --- NPC 觸碰與專屬商店 UI 切換機制 ---
+    function handleNpcInteract(playerEntity, npcEntity) {
+        player.body.setVelocity(0);
+        targetPointer = null;
+        const type = npcEntity.getData('type');
+        openShopUI(type);
+    }
+
+    function openShopUI(type) {
+        const shopWin = document.getElementById('shop-window');
+        const shopTitle = document.getElementById('shop-title');
+        const shopContent = document.getElementById('shop-content');
+        shopWin.style.display = 'block';
+
+        if(type === 'weapon') {
+            shopTitle.textContent = "⚔️ 普隆德拉皇家鐵匠";
+            shopContent.innerHTML = `
+                <div class="shop-row">
+                    <span>🗡️ 鋼鐵短劍 (Atk+15)</span>
+                    <button class="shop-btn" onclick="buyItem('weapon_1', 300)">300z 購買</button>
+                </div>
+                <div class="shop-row">
+                    <span>🔱 燕尖矛 (Atk+35)</span>
+                    <button class="shop-btn" onclick="buyItem('weapon_2', 800)">800z 購買</button>
+                </div>
+            `;
+        } else if(type === 'item') {
+            shopTitle.textContent = "🧪 普隆德拉連鎖藥局";
+            shopContent.innerHTML = `
+                <div class="shop-row">
+                    <span>🔹 藍色藥水 (回復 25 SP)</span>
+                    <button class="shop-btn" onclick="buyItem('blue_pot', 50)">50z 購買</button>
+                </div>
+                <div class="shop-row">
+                    <span>🍂 傑勒比結晶 (珍藏品)</span>
+                    <button class="shop-btn sell" onclick="sellLoot()">全部變賣 (15z/個)</button>
+                </div>
+            `;
+        }
+    }
+
+    function closeShop() {
+        document.getElementById('shop-window').style.display = 'none';
+    }
+
+    // --- 商業買賣核心演算交易模組 ---
+    function buyItem(itemId, cost) {
+        if(playerData.zeny < cost) {
+            logChat("商店", "❌ 你的 Zeny 不夠，商人搖了搖頭！");
+            return;
+        }
+        playerData.zeny -= cost;
+
+        if(itemId === 'weapon_1') {
+            playerData.bonusAtk = 15;
+            playerData.weaponText = "🗡️ 鋼鐵短劍 (+15)";
+            logChat("商店", "🛍️ 成功購買並裝備了 [鋼鐵短劍]！");
+        } else if(itemId === 'weapon_2') {
+            playerData.bonusAtk = 35;
+            playerData.weaponText = "🔱 燕尖矛 (+35)";
+            logChat("商店", "🛍️ 成功購買並裝備了神兵 [燕尖矛]！");
+        } else if(itemId === 'blue_pot') {
+            playerData.bluePotions++;
+            logChat("商店", "🛍️ 購買了 1 瓶 [藍色藥水] 並收進背包。");
+        }
+        updateUI();
+    }
+
+    function sellLoot() {
+        if(playerData.lootCount <= 0) {
+            logChat("商店", "❌ 你身上沒有任何 [傑勒比結晶] 可以變賣。");
+            return;
+        }
+        const gain = playerData.lootCount * 15;
+        playerData.zeny += gain;
+        logChat("商店", `💰 變賣了 ${playerData.lootCount} 個結晶，獲得了 ${gain} Zeny！`);
+        playerData.lootCount = 0;
+        updateUI();
+    }
+
+    // --- 背包道具主動使用機制 ---
+    function useBluePotion() {
+        if(playerData.bluePotions <= 0) {
+            logChat("背包", "❌ 背包裡沒有藍色藥水了！");
+            return;
+        }
+        if(playerData.sp >= playerData.maxSp) {
+            logChat("背包", "⚠️ 你的魔力值（SP）已經全滿，無需使用。");
+            return;
+        }
+        playerData.bluePotions--;
+        playerData.sp = Math.min(playerData.maxSp, playerData.sp + 25);
+        logChat("背包", "🔹 咕嚕...使用了藍色藥水，恢復了 25 點 SP！");
+        updateUI();
+    }
+
+    // --- 經典戰鬥與狂擊特技系統 ---
+    function handleBattleLoop(scene, attacker, attData, monster, currentTime, isPlayer) {
+        if (currentTime - attData.lastAttackTime > attData.attackCooldown) {
+            attData.lastAttackTime = currentTime;
+            const dmg = Phaser.Math.Between(attData.baseAtk + attData.str - 2, attData.baseAtk + attData.str + 3) + (isPlayer ? playerData.bonusAtk : 0);
+            monster.hp -= dmg;
+            monster.hpText.setText(`HP: ${monster.hp > 0 ? monster.hp : 0}`);
+            showPopText(scene, monster.x, monster.y - 20, dmg, "#f1c40f");
+
+            if (monster.hp > 0) {
+                const monsterDmg = Phaser.Math.Between(4, 8);
+                playerData.hp = Math.max(0, playerData.hp - monsterDmg);
+                updateUI();
+                showPopText(scene, player.x, player.y - 20, monsterDmg, "#e74c3c");
+                
+                if(playerData.hp <= 0) {
+                    player.setPosition(200, 300); // 死亡直接回城鎮安全區
+                    playerData.hp = playerData.maxHp;
+                    logChat("系統", "💀 不幸力竭，已被緊急送回普隆德拉安全區。");
+                    updateUI();
+                }
+            }
+
+            if (monster.hp <= 0) {
+                monster.destroy();
+                logChat("系統", `擊敗了 ${monster.monsterName}！`);
+                playerData.exp += 35;
+                playerData.lootCount++; // 獲得結晶
+
+                if(playerData.exp >= playerData.nextExp) {
+                    playerData.level++; playerData.points += 4; playerData.exp = 0;
+                    logChat("系統", `🎉 Level Up！晉升至 Lv.${playerData.level}！`);
+                }
+                updateUI();
+                setTimeout(() => spawnMonster(scene), 3000);
+            }
+        }
+    }
+
+    function triggerBashSkill() {
+        const scene = game.scene.scenes[0];
+        if (playerData.sp < 15) { logChat("特技", "❌ SP 不足，無法施展狂擊！"); return; }
+
+        let targetMonster = null;
+        monsters.getChildren().forEach(m => {
+            if (Phaser.Math.Distance.Between(player.x, player.y, m.x, m.y) < 90) targetMonster = m;
+        });
+
+        if (!targetMonster) { logChat("特技", "⚠️ 周圍沒有可以鎖定的打怪目標。"); return; }
+
+        playerData.sp -= 15;
+        const electro = scene.add.text(targetMonster.x - 10, targetMonster.y - 30, "⚡⚡", { font: "45px Arial" });
+        scene.tweens.add({ targets: electro, scale: 1.6, alpha: 0, duration: 300, onComplete: () => electro.destroy() });
+
+        const skillDmg = Math.floor((playerData.baseAtk + playerData.str + playerData.bonusAtk) * 2.5);
+        targetMonster.hp -= skillDmg;
+        targetMonster.hpText.setText(`HP: ${targetMonster.hp > 0 ? targetMonster.hp : 0}`);
+        showPopText(scene, targetMonster.x, targetMonster.y - 30, `💥 ${skillDmg}`, "#3498db");
+        logChat("特技", `⚔️ 施展【狂擊】重創 ${targetMonster.monsterName} 造成 ${skillDmg} 點傷害！`);
+
+        if (targetMonster.hp <= 0) {
+            targetMonster.destroy(); playerData.exp += 35; playerData.lootCount++;
+            updateUI();
+            setTimeout(() => spawnMonster(scene), 3000);
+        }
+        updateUI();
+    }
+
+    // --- 素質配點與 UI 同步渲染 ---
+    function addStat(type) {
+        if (playerData.points > 0) {
+            playerData.points--;
+            if (type === 'str') playerData.str++;
+            if (type === 'agi') playerData.agi++;
+            if (type === 'vit') { playerData.vit++; playerData.maxHp += 15; playerData.hp += 15; }
+            updateUI();
+        }
+    }
+
+    function updateUI() {
+        document.getElementById('job-title').textContent = `🧙‍♂️ 冒險者 (Lv.${playerData.level})`;
+        document.getElementById('hp-text').textContent = `${playerData.hp}/${playerData.maxHp}`;
+        document.getElementById('hp-fill').style.width = `${(playerData.hp / playerData.maxHp) * 100}%`;
+        document.getElementById('sp-text').textContent = `${playerData.sp}/${playerData.maxSp}`;
+        document.getElementById('sp-fill').style.width = `${(playerData.sp / playerData.maxSp) * 100}%`;
+        document.getElementById('exp-text').textContent = `${Math.floor((playerData.exp / playerData.nextExp)*100)}%`;
+        document.getElementById('exp-fill').style.width = `${(playerData.exp / playerData.nextExp) * 100}%`;
+        
+        document.getElementById('zeny-text').textContent = playerData.zeny;
+        document.getElementById('inv-loot').textContent = `結晶 x${playerData.lootCount}`;
+        document.getElementById('inv-blue-pot').textContent = `x${playerData.bluePotions}`;
+        document.getElementById('eq-weapon').textContent = playerData.weaponText;
+        
+        document.getElementById('stat-pts').textContent = playerData.points;
+        document.getElementById('p-str').textContent = playerData.str;
+        document.getElementById('p-agi').textContent = playerData.agi;
+        document.getElementById('p-vit').textContent = playerData.vit;
+    }
+
+    function spawnMonster(scene) {
+        const t = [{e:"🦊", n:"波利"}, {e:"👻", n:"小惡魔"}, {e:"🐛", n:"盜蟲"}][Phaser.Math.Between(0, 2)];
+        const mText = scene.add.text(-15, -15, t.e, { font: "36px Arial" });
+        const mHp = scene.add.text(-20, -32, `HP: 50`, { font: "11px Arial", fill: "#ff4757" });
+        
+        // 確保怪物不會出生在安全城鎮區內 (x > 450)
+        const mContainer = scene.add.container(Phaser.Math.Between(450, 1900), Phaser.Math.Between(450, 1900), [mText, mHp]);
+        scene.physics.world.enable(mContainer);
+        mContainer.hp = 50; mContainer.monsterName = t.n; mContainer.hpText = mHp;
+
+        scene.tweens.add({ targets: mText, scaleY: 0.88, scaleX: 1.05, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        monsters.add(mContainer);
+    }
+
+    async function initPuterAIPlayers(scene) {
+        const names = ["路人天賜", "愛配利雅"];
+        for (let i = 0; i < names.length; i++) {
+            const body = scene.add.text(-20, -20, "🧍", { font: "40px Arial" });
+            const hat = scene.add.text(-25, -45, "🤠", { font: "26px Arial" });
+            const nameTag = scene.add.text(-30, 22, names[i], { font: "11px Arial", fill: "#fff", backgroundColor: "#5b7da3" });
+            const bubble = scene.add.text(-40, -75, "", { font: "12px Arial", fill: "#000", backgroundColor: "#fff", padding: 3 });
+            bubble.setAlpha(0);
+
+            const ai = scene.add.container(Phaser.Math.Between(100, 300), Phaser.Math.Between(250, 350), [body, hat, nameTag, bubble]);
+            scene.physics.world.enable(ai);
+            ai.name = names[i]; ai.bubble = bubble;
+            aiPlayers.push(ai);
+
+            try {
+                const response = await puter.ai.chat(`你是RO城鎮玩家 ${names[i]}。請用一句話(15字內)說自己要去跟商人買裝備、或者去變賣結晶。`);
+                const msg = response.toString().trim();
+                logChat(names[i], msg);
+                bubble.setText(msg).setAlpha(1);
+                scene.time.delayedCall(4000, () => bubble.setAlpha(0));
+            } catch(e) {}
+        }
+    }
+
+    function showPopText(scene, x, y, text, color) {
+        const t = scene.add.text(x, y, text, { font: "bold 20px Arial", fill: color, stroke: "#000", strokeThickness: 2 });
+        scene.tweens.add({ targets: t, y: y - 55, alpha: 0, duration: 550, onComplete: () => t.destroy() });
+    }
+
+    function sendPlayerChat(e) {
+        if(e.key === 'Enter') {
+            const input = document.getElementById('chat-input');
+            if(input.value.trim() !== "") { logChat("玩家", input.value); input.value = ""; }
+        }
+    }
+
+    function logChat(sender, msg) {
+        const log = document.getElementById('chat-log');
+        log.innerHTML += `<div><strong>[${sender}]:</strong> ${msg}</div>`;
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function setupJoystick() {
+        const joystick = document.getElementById('joystick');
+        const stick = document.getElementById('stick');
+        joystick.addEventListener('touchstart', () => isJoystickActive = true);
+        joystick.addEventListener('touchmove', (e) => {
+            const rect = joystick.getBoundingClientRect();
+            let x = e.touches[0].clientX - (rect.left + 45);
+            let y = e.touches[0].clientY - (rect.top + 45);
+            const dist = Math.sqrt(x*x + y*y);
+            if(dist > 25) { x=(x/dist)*25; y=(y/dist)*25; }
+            stick.style.transform = `translate(${x}px, ${y}px)`;
+            joystickDelta = { x: x/25, y: y/25 };
+        });
+        joystick.addEventListener('touchend', () => {
+            isJoystickActive = false; stick.style.transform = 'translate(0px,0px)'; joystickDelta = {x:0, y:0};
+        });
+    }
+
+    // =========================================================================
+    // 💾 全新核心系統：本地與雲端存檔引擎機制
+    // =========================================================================
+
+    // 1. 產生乾淨的可序列化存檔資料
+    function generateSavePackage() {
+        return {
+            level: playerData.level,
+            exp: playerData.exp,
+            nextExp: playerData.nextExp,
+            hp: playerData.hp,
+            maxHp: playerData.maxHp,
+            sp: playerData.sp,
+            maxSp: playerData.maxSp,
+            str: playerData.str,
+            agi: playerData.agi,
+            vit: playerData.vit,
+            points: playerData.points,
+            baseAtk: playerData.baseAtk,
+            bonusAtk: playerData.bonusAtk,
+            lootCount: playerData.lootCount,
+            bluePotions: playerData.bluePotions,
+            zeny: playerData.zeny,
+            weaponText: playerData.weaponText,
+            savedAt: new Date().toISOString()
+        };
+    }
+
+    // 2. 將讀取的檔案內容還原至遊戲數據中
+    function applySavePackage(data) {
+        try {
+            if (!data.level || !data.zeny) throw new Error("無效的存檔欄位格式");
+            
+            playerData.level = data.level;
+            playerData.exp = data.exp;
+            playerData.nextExp = data.nextExp;
+            playerData.hp = data.hp;
+            playerData.maxHp = data.maxHp;
+            playerData.sp = data.sp;
+            playerData.maxSp = data.maxSp;
+            playerData.str = data.str;
+            playerData.agi = data.agi;
+            playerData.vit = data.vit;
+            playerData.points = data.points;
+            playerData.baseAtk = data.baseAtk;
+            playerData.bonusAtk = data.bonusAtk;
+            playerData.lootCount = data.lootCount;
+            playerData.bluePotions = data.bluePotions;
+            playerData.zeny = data.zeny;
+            playerData.weaponText = data.weaponText || "🪵 幼木棒";
+            
+            updateUI();
+            logChat("系統", `💾 存檔載入成功！目前等級: Lv.${playerData.level}`);
+            return true;
+        } catch (e) {
+            logChat("系統", "❌ 存檔格式毀損，無法載入。");
+            return false;
+        }
+    }
+
+    // --- 本地端存檔演算法 ---
+    function exportLocalSave() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(generateSavePackage(), null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", SAVE_FILE_NAME);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        logChat("系統", "📥 成功匯出本地端 json 存檔檔案。");
+    }
+
+    function importLocalSave(event) {
+        const input = event.target;
+        if (!input.files || input.files.length === 0) return;
+        
+        const file = input.files[0];
+        const reader = new FileReader();
+        reader.onload = function() {
+            try {
+                const parsedData = JSON.parse(reader.result);
+                applySavePackage(parsedData);
+            } catch(e) {
+                logChat("系統", "❌ 讀取本地檔案失敗，請確保這是正確的 JSON 格式。");
+            }
+        };
+        reader.readAsText(file);
+        input.value = ""; // 清空選擇狀態以利下次觸發
+    }
+
+    // --- Google Drive 雲端同步架構 ---
+    function gapiLoaded() {
+        gapi.load('client', initializeGapiClient);
+    }
+
+    async function initializeGapiClient() {
+        await gapi.client.init({});
+    }
+
+    function gisLoaded() {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: SCOPES,
+            callback: (resp) => {
+                if (resp.error !== undefined) {
+                    logChat("Google", "❌ 授權失敗: " + resp.error);
+                    return;
+                }
+                accessToken = resp.access_token;
+                logChat("Google", "🟢 授權成功！已成功連結至 Google Drive。");
+                // 變更 UI 按鈕狀態
+                document.getElementById('gdrive-login-btn').style.display = 'none';
+                document.getElementById('gdrive-save-btn').style.display = 'block';
+                document.getElementById('gdrive-load-btn').style.display = 'block';
+            },
+        });
+    }
+
+    function handleAuthClick() {
+        if (accessToken === null) {
+            tokenClient.requestAccessToken({prompt: 'consent'});
+        } else {
+            tokenClient.requestAccessToken({prompt: ''});
+        }
+    }
+
+    // 尋找雲端中是否已存在同名的存檔檔案
+    async function findSaveFileOnDrive() {
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${SAVE_FILE_NAME}' and trashed=false`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const result = await response.json();
+        if (result.files && result.files.length > 0) {
+            return result.files[0].id; // 回傳檔案 ID
+        }
+        return null;
+    }
+
+    // 核心：上傳或更新至雲端
+    async function uploadToDrive() {
+        if (!accessToken) {
+            logChat("Google", "❌ 請先登入 Google 帳號。");
+            return;
+        }
+        logChat("Google", "⏳ 正在同步進度至雲端硬碟...");
+        
+        try {
+            const fileId = await findSaveFileOnDrive();
+            const saveContent = JSON.stringify(generateSavePackage(), null, 2);
+            
+            let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            let method = 'POST';
+            
+            const metadata = { name: SAVE_FILE_NAME, mimeType: 'application/json' };
+            
+            if (fileId) {
+                // 如果檔案存在，切換為更新（Update）模式
+                url = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`;
+                method = 'PATCH';
+            }
+
+            const boundary = 'foo_bar_baz';
+            const delimiter = `\r\n--${boundary}\r\n`;
+            const closeDelimiter = `\r\n--${boundary}--`;
+            
+            const multipartRequestBody =
+                delimiter +
+                'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+                JSON.stringify(metadata) +
+                delimiter +
+                'Content-Type: application/json\r\n\r\n' +
+                saveContent +
+                closeDelimiter;
+
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': `multipart/related; boundary=${boundary}`
+                },
+                body: multipartRequestBody
+            });
+
+            if (response.ok) {
+                logChat("Google", "☁️ 雲端同步完畢！進度已成功儲存。");
+            } else {
+                throw new Error("伺服器回應異常");
+            }
+        } catch (error) {
+            console.error(error);
+            logChat("Google", "❌ 雲端儲存失敗，請檢查網路連線或權限設定。");
+        }
+    }
+
+    // 核心：自雲端下載並覆蓋進度
+    async function loadFromDrive() {
+        if (!accessToken) {
+            logChat("Google", "❌ 請先登入 Google 帳號。");
+            return;
+        }
+        logChat("Google", "⏳ 正在自雲端請求數據庫...");
+
+        try {
+            const fileId = await findSaveFileOnDrive();
+            if (!fileId) {
+                logChat("Google", "⚠️ 雲端硬碟上找不到任何相關的遊戲存檔。");
+                return;
+            }
+
+            const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (response.ok) {
+                const cloudData = await response.json();
+                applySavePackage(cloudData);
+            } else {
+                throw new Error("無法取得檔案內容");
+            }
+        } catch (error) {
+            console.error(error);
+            logChat("Google", "❌ 自雲端讀取資料失敗。");
+        }
+    }
+</script>
+</body>
+</html>
