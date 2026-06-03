@@ -410,20 +410,53 @@
     let tokenClient;
     let accessToken = null;
 
-    const config = {
-        type: Phaser.AUTO,
-        parent: 'game-container',
-        scale: {
-            mode: Phaser.Scale.RESIZE,
-            autoCenter: Phaser.Scale.NO_CENTER,
-            width: window.innerWidth,
-            height: window.innerHeight,
-        },
-        physics: { default: 'arcade', arcade: { y: 0 } },
-        scene: { preload: preload, create: create, update: update }
-    };
+    let game;
 
-    const game = new Phaser.Game(config);
+    function launchPhaser() {
+        const gc = document.getElementById('game-container');
+        // 強制瀏覽器做一次 reflow，確保 clientWidth/Height 是真實值
+        void gc.getBoundingClientRect();
+        const W = gc.clientWidth  || window.innerWidth;
+        const H = gc.clientHeight || (window.innerHeight * 0.5);
+        if (W < 10 || H < 10) {
+            // 尺寸還沒穩定，等下一幀再試
+            requestAnimationFrame(launchPhaser);
+            return;
+        }
+        const config = {
+            type: Phaser.AUTO,
+            width: W,
+            height: H,
+            parent: 'game-container',
+            backgroundColor: '#3e7e43',
+            physics: { default: 'arcade', arcade: { y: 0 } },
+            scene: { preload: preload, create: create, update: update }
+        };
+        game = new Phaser.Game(config);
+        // 桌面視窗 resize 時同步 Phaser 尺寸
+        window.addEventListener('resize', () => {
+            if (!game) return;
+            const g = document.getElementById('game-container');
+            const nw = g.clientWidth, nh = g.clientHeight;
+            if (nw > 10 && nh > 10) game.scale.resize(nw, nh);
+        });
+    }
+
+    // 頁面載入完成後啟動，給 CSS layout 充足時間
+    function _tryLaunch() {
+        const gc = document.getElementById('game-container');
+        void gc.getBoundingClientRect();
+        if (gc.clientHeight > 10) {
+            launchPhaser();
+        } else {
+            setTimeout(_tryLaunch, 50);
+        }
+    }
+    if (document.readyState === 'complete') {
+        setTimeout(_tryLaunch, 0);
+    } else {
+        window.addEventListener('load', () => setTimeout(_tryLaunch, 0));
+    }
     let player, playerOutfit;
     
     // 擴充包含貨幣（Zeny）與藥水儲備的資料結構
@@ -524,30 +557,15 @@
         logChat("系統", "歡迎來到普隆德拉邊境！走到 NPC 商人身邊即可開啟買賣介面。");
         initPuterAIPlayers(scene);
         
-        // 初始化 Google API 機制
-        gapiLoaded();
-        gisLoaded();
+        // 初始化 Google API 機制（本地端 / 無網路時安全跳過）
+        try { if (typeof gapi !== 'undefined') gapiLoaded(); } catch(e) {}
+        try { if (typeof google !== 'undefined' && google.accounts) gisLoaded(); } catch(e) {}
 
-        // RESIZE 模式：每次視窗大小改變時更新相機
-        scene.scale.on('resize', (gameSize) => {
-            scene.cameras.main.setSize(gameSize.width, gameSize.height);
+        // 視窗 resize 時同步相機
+        scene.scale.on('resize', (gs) => {
+            scene.cameras.main.setSize(gs.width, gs.height);
             scene.cameras.main.setBounds(0, 0, 2000, 2000);
         });
-        // 手機/平板：讓 Phaser canvas 高度符合 #game-container（上半部）
-        function syncCanvasHeight() {
-            const gc = document.getElementById('game-container');
-            if (!gc) return;
-            const h = gc.clientHeight;
-            const w = gc.clientWidth;
-            if (h > 0 && w > 0) {
-                game.scale.resize(w, h);
-                scene.cameras.main.setSize(w, h);
-                scene.cameras.main.setBounds(0, 0, 2000, 2000);
-            }
-        }
-        window.addEventListener('resize', syncCanvasHeight);
-        setTimeout(syncCanvasHeight, 50);
-        setTimeout(syncCanvasHeight, 300);
     }
 
     function update(time) {
@@ -794,6 +812,22 @@
     }
 
     // --- 背包道具主動使用機制 ---
+    function useRedPotion() {
+        if ((playerData.redPotions || 0) <= 0) {
+            logChat("背包", "❌ 背包裡沒有紅色藥水了！");
+            return;
+        }
+        if (playerData.hp >= playerData.maxHp) {
+            logChat("背包", "⚠️ HP 已全滿，無需使用。");
+            return;
+        }
+        playerData.redPotions--;
+        const heal = playerData._redPotHeal || 80;
+        playerData.hp = Math.min(playerData.maxHp, playerData.hp + heal);
+        logChat("背包", `❤️ 使用了紅色藥水，恢復了 ${heal} 點 HP！`);
+        updateUI();
+    }
+
     function useBluePotion() {
         if(playerData.bluePotions <= 0) {
             logChat("背包", "❌ 背包裡沒有藍色藥水了！");
@@ -839,8 +873,17 @@
                 playerData.lootCount++; // 獲得結晶
 
                 if(playerData.exp >= playerData.nextExp) {
-                    playerData.level++; playerData.points += 4; playerData.exp = 0;
-                    logChat("系統", `🎉 Level Up！晉升至 Lv.${playerData.level}！`);
+                    playerData.level++;
+                    playerData.points += 4;
+                    playerData.exp = 0;
+                    playerData.nextExp = Math.floor(playerData.nextExp * 1.4);
+                    // 每升一級提升 maxHp/maxSp 並滿血滿魔
+                    playerData.maxHp += 20;
+                    playerData.maxSp += 8;
+                    playerData.baseAtk += 2;
+                    playerData.hp = playerData.maxHp;
+                    playerData.sp = playerData.maxSp;
+                    logChat("系統", `🎉 Level Up！晉升至 Lv.${playerData.level}！HP & SP 全滿！`);
                 }
                 updateUI();
                 setTimeout(() => spawnMonster(scene), 3000);
@@ -1075,6 +1118,9 @@
             bonusAtk: playerData.bonusAtk,
             lootCount: playerData.lootCount,
             bluePotions: playerData.bluePotions,
+            redPotions: playerData.redPotions || 0,
+            redPotHeal: playerData._redPotHeal || 80,
+            shieldCharm: playerData.shieldCharm || 0,
             zeny: playerData.zeny,
             weaponText: playerData.weaponText,
             savedAt: new Date().toISOString()
@@ -1101,6 +1147,9 @@
             playerData.bonusAtk = data.bonusAtk;
             playerData.lootCount = data.lootCount;
             playerData.bluePotions = data.bluePotions;
+            playerData.redPotions = data.redPotions || 0;
+            playerData._redPotHeal = data.redPotHeal || 80;
+            playerData.shieldCharm = data.shieldCharm || 0;
             playerData.zeny = data.zeny;
             playerData.weaponText = data.weaponText || "🪵 幼木棒";
             
@@ -1163,10 +1212,15 @@
                 }
                 accessToken = resp.access_token;
                 logChat("Google", "🟢 授權成功！已成功連結至 Google Drive。");
-                // 變更 UI 按鈕狀態
-                document.getElementById('gdrive-login-btn').style.display = 'none';
-                document.getElementById('gdrive-save-btn').style.display = 'block';
-                document.getElementById('gdrive-load-btn').style.display = 'block';
+                // 更新桌面與手機版按鈕
+                ['','-m'].forEach(sfx => {
+                    const login = document.getElementById('gdrive-login-btn' + sfx);
+                    const save  = document.getElementById('gdrive-save-btn'  + sfx);
+                    const load  = document.getElementById('gdrive-load-btn'  + sfx);
+                    if (login) login.style.display = 'none';
+                    if (save)  save.style.display  = 'block';
+                    if (load)  load.style.display  = 'block';
+                });
             },
         });
     }
