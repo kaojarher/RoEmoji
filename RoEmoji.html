@@ -133,8 +133,18 @@
             .ro-bar { height: 8px; margin: 1px 0; }
             .zeny-row { font-size: 10px; padding: 2px 4px; white-space: nowrap; }
 
-            /* 素質、存檔：隱藏（行動端不顯示） */
-            #stat-window, #save-window { display: none; }
+            /* 素質：隱藏 */
+            #stat-window { display: none; }
+
+            /* 存檔：改為右下角浮動小面板 */
+            #save-window {
+                display: block;
+                top: auto; bottom: 175px; left: 8px; right: auto;
+                width: 148px; padding: 5px 7px;
+                z-index: 150;
+            }
+            #save-window .ro-panel-title { font-size: 11px; padding-bottom: 3px; margin-bottom: 4px; }
+            #save-window .save-btn { font-size: 10px; padding: 6px 0; margin: 3px 0; min-height: 34px; }
 
             /* 背包：右側緊湊 */
             #inventory-window {
@@ -679,15 +689,50 @@
             const ai = scene.add.container(Phaser.Math.Between(100, 300), Phaser.Math.Between(250, 350), [body, hat, nameTag, bubble]);
             scene.physics.world.enable(ai);
             ai.name = names[i]; ai.bubble = bubble;
+            ai.targetX = Phaser.Math.Between(80, 350);
+            ai.targetY = Phaser.Math.Between(80, 370);
             aiPlayers.push(ai);
 
+            // 行走移動迴圈：每秒更新速度朝向目標點
+            scene.time.addEvent({
+                delay: 800, loop: true,
+                callback: () => {
+                    if (!ai.active) return;
+                    const dist = Phaser.Math.Distance.Between(ai.x, ai.y, ai.targetX, ai.targetY);
+                    if (dist < 20) {
+                        // 到達目標後隨機選下一個目標（在城鎮或略外範圍）
+                        ai.targetX = Phaser.Math.Between(60, 400);
+                        ai.targetY = Phaser.Math.Between(60, 400);
+                    }
+                    const angle = Phaser.Math.Angle.Between(ai.x, ai.y, ai.targetX, ai.targetY);
+                    const spd = 70;
+                    ai.body.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
+                }
+            });
+
+            // 定期與 Puter AI 請求新對白（每 12 秒）
+            const aiChatLoop = async () => {
+                try {
+                    const response = await puter.ai.chat(`你是RO城鎮玩家 ${names[i]}。請用一句話(12字內)說你正在城鎮閒逛的心情或計劃。`);
+                    const msg = response.toString().trim();
+                    logChat(names[i], msg);
+                    bubble.setText(msg).setAlpha(1);
+                    scene.time.delayedCall(5000, () => bubble.setAlpha(0));
+                } catch(e) {}
+                scene.time.delayedCall(12000, aiChatLoop);
+            };
+
+            // 啟動時說第一句話
             try {
                 const response = await puter.ai.chat(`你是RO城鎮玩家 ${names[i]}。請用一句話(15字內)說自己要去跟商人買裝備、或者去變賣結晶。`);
                 const msg = response.toString().trim();
                 logChat(names[i], msg);
                 bubble.setText(msg).setAlpha(1);
-                scene.time.delayedCall(4000, () => bubble.setAlpha(0));
+                scene.time.delayedCall(5000, () => bubble.setAlpha(0));
             } catch(e) {}
+
+            // 延遲 12 秒後開始循環對白
+            scene.time.delayedCall(12000 + i * 4000, aiChatLoop);
         }
     }
 
