@@ -19,17 +19,73 @@
             --accent-blue: #2471a3;
             --accent-green: #1e8449;
             --shadow: 0 3px 12px rgba(0,0,0,0.5);
+            /* 手機/平板：上半地圖高度 */
+            --map-h: 50vh;
         }
 
         * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; background-color: #000; overflow: hidden; font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; user-select: none; touch-action: none; }
+        body { margin: 0; padding: 0; background-color: #1a1a2e; overflow: hidden; font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; user-select: none; touch-action: none; display: flex; flex-direction: column; width: 100dvw; height: 100dvh; }
 
-        #game-container canvas { display: block; max-width: 100%; max-height: 100%; }
-        #game-container { width: 100dvw; height: 100dvh; display: flex; justify-content: center; align-items: center; overflow: hidden; background: #000; }
+        /* 桌面：canvas 鋪滿全螢幕 */
+        #game-container {
+            flex: 1; width: 100%; overflow: hidden; background: #000;
+            position: relative;
+        }
+        #game-container canvas { display: block; width: 100% !important; height: 100% !important; }
+
+        /* 下半部 UI 面板（手機/平板專用，桌面隱藏） */
+        #bottom-ui {
+            display: none;
+            width: 100%; background: #0d1b2a;
+            border-top: 2px solid #4a6d96;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        /* 下半 UI 頂列：狀態條 */
+        #bottom-status {
+            display: flex; flex-direction: row; align-items: center; gap: 6px;
+            padding: 4px 10px; background: rgba(215,230,250,0.15);
+            border-bottom: 1px solid #4a6d96; flex-wrap: nowrap;
+        }
+        /* 下半 UI 主區：搖桿 + 背包 + 動作鍵 */
+        #bottom-main {
+            display: flex; flex-direction: row; align-items: stretch;
+            flex: 1; overflow: hidden;
+        }
+        /* 搖桿區 */
+        #bottom-joystick {
+            display: flex; align-items: center; justify-content: center;
+            padding: 8px; flex-shrink: 0;
+        }
+        /* 中間資訊區 */
+        #bottom-info {
+            flex: 1; overflow-y: auto; padding: 6px 4px;
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        /* 動作鍵區 */
+        #bottom-actions {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 6px; padding: 8px; flex-shrink: 0;
+        }
+        /* 聊天條 */
+        #bottom-chat {
+            padding: 4px 8px; background: rgba(0,0,0,0.3);
+            border-top: 1px solid #4a6d96;
+            display: flex; gap: 6px; align-items: center;
+            flex-shrink: 0;
+        }
+        /* 底部 UI 面板內的 .ro-panel 改為 relative */
+        #bottom-ui .ro-panel { position: relative; margin: 0; box-shadow: none; border-radius: 4px; padding: 4px 6px; font-size: 10px; }
+        #bottom-ui .ro-panel-title { font-size: 10px; padding-bottom: 2px; margin-bottom: 3px; }
+        #bottom-ui .inv-slot { padding: 2px 4px; font-size: 9px; }
+        #bottom-ui .use-btn { font-size: 8px; padding: 2px 4px; }
+        #bottom-ui .save-btn { font-size: 9px; padding: 4px 0; margin: 2px 0; }
         
         /* ===== 核心面板樣式 ===== */
         .ro-panel {
-            position: absolute;
+            position: fixed;
             background: var(--panel-bg);
             border: 2px solid var(--panel-border);
             border-radius: 6px;
@@ -118,7 +174,7 @@
         #chat-input { border: 1px solid var(--panel-border); border-radius: 3px; padding: 4px 6px; font-size: 11px; outline: none; background: rgba(255,255,255,0.8); }
 
         /* ===== 行動端搖桿 ===== */
-        .mobile-ui { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 20px; pointer-events: none; }
+        .mobile-ui { position: fixed; bottom: 20px; width: 100%; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 20px; pointer-events: none; }
         .joystick-zone { width: 110px; height: 110px; background: rgba(30, 80, 140, 0.3); border: 2.5px solid rgba(150, 200, 255, 0.7); border-radius: 50%; position: relative; pointer-events: auto; box-shadow: 0 0 20px rgba(100,160,255,0.3); }
         .joystick-stick { width: 44px; height: 44px; background: radial-gradient(circle at 35% 35%, #7fb3e0, #3a7bbf); border-radius: 50%; position: absolute; top: 33px; left: 33px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); transition: transform 0.05s; }
         .mobile-action-buttons { display: flex; flex-direction: column; gap: 8px; pointer-events: auto; }
@@ -129,126 +185,79 @@
         .btn-sp-pot { background: radial-gradient(circle at 35% 35%, #2980b9, #1a6fa8); }
 
         /* ===== 音效提示 ===== */
-        #sfx-indicator { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: #aed6f1; border: 1px solid #5b7da3; border-radius: 20px; padding: 3px 12px; font-size: 11px; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        #sfx-indicator { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: #aed6f1; border: 1px solid #5b7da3; border-radius: 20px; padding: 3px 12px; font-size: 11px; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
 
         /* ===================================
-           📱 手機介面 (≤ 600px)
+           📱 手機介面 (≤ 600px)  上半地圖 / 下半 UI
            =================================== */
         @media (max-width: 600px) {
-            .ro-panel { font-size: 11px; padding: 6px 8px; }
+            /* 桌面的浮動面板全部隱藏，改用 #bottom-ui */
+            #status-window, #stat-window, #inventory-window,
+            #save-window, #skill-window, #chat-window { display: none !important; }
+            .mobile-ui { display: none !important; }
 
-            /* 狀態欄：頂部橫條 */
-            #status-window {
-                top: 0; left: 0; right: 0; width: 100%;
-                border-radius: 0; border-left: none; border-right: none; border-top: none;
-                display: flex; flex-direction: row; gap: 8px; align-items: center; padding: 5px 10px;
-                z-index: 100; flex-wrap: wrap;
+            /* game-container: 上半 50vh */
+            #game-container { height: 50dvh; flex: none; }
+
+            /* 啟用下半 UI */
+            #bottom-ui { display: flex; height: 50dvh; }
+
+            /* 搖桿 */
+            .joystick-zone { width: 88px; height: 88px; }
+            .joystick-stick { width: 32px; height: 32px; top: 28px; left: 28px; }
+
+            /* 動作按鈕 */
+            .mobile-action-btn { width: 52px; height: 52px; font-size: 9px; border-width: 2px; }
+
+            /* 商店：全螢幕彈窗置中 */
+            #shop-window {
+                position: fixed; top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                width: 94vw; max-height: 80dvh; z-index: 500;
             }
-            #job-title { font-size: 11px; white-space: nowrap; margin-bottom: 0; flex-shrink: 0; }
-            .bar-group { flex: 1; min-width: 70px; }
-            .bar-label { font-size: 9px; }
-            .ro-bar { height: 8px; margin: 1px 0; }
-            .zeny-row { font-size: 10px; padding: 2px 4px; white-space: nowrap; }
-
-            /* 素質：隱藏 */
-            #stat-window { display: none; }
-
-            /* 存檔：改為右下角浮動小面板 */
-            #save-window {
-                display: block;
-                top: auto; bottom: 175px; left: 8px; right: auto;
-                width: 148px; padding: 5px 7px;
-                z-index: 150;
-            }
-            #save-window .ro-panel-title { font-size: 11px; padding-bottom: 3px; margin-bottom: 4px; }
-            #save-window .save-btn { font-size: 10px; padding: 6px 0; margin: 3px 0; min-height: 34px; }
-
-            /* 背包：右側緊湊 */
-            #inventory-window {
-                top: auto; bottom: 175px; right: 8px;
-                width: 150px; padding: 5px 7px;
-            }
-            .inv-slot { padding: 3px 5px; font-size: 10px; }
-            .use-btn { font-size: 9px; padding: 2px 5px; }
-
-            /* 技能欄：隱藏（改用行動按鈕） */
-            #skill-window { display: none; }
-
-            /* 聊天室：底部橫條 */
-            #chat-window {
-                bottom: 0; left: 0; width: 60%; height: 80px;
-                border-radius: 0; border-left: none; border-bottom: none; border-right: none;
-                padding: 4px 6px;
-            }
-            #chat-log { font-size: 10px; }
-            #chat-input { font-size: 10px; padding: 2px 4px; }
-
-            /* 搖桿與按鈕 */
-            .mobile-ui { bottom: 85px; padding: 0 12px; }
-            .joystick-zone { width: 100px; height: 100px; }
-            .joystick-stick { width: 38px; height: 38px; top: 31px; left: 31px; }
-            .mobile-action-buttons { gap: 6px; }
-            .mobile-action-btn { width: 58px; height: 58px; font-size: 10px; }
-
-            /* 商店：全寬 */
-            #shop-window { width: 95vw; top: 50%; left: 50%; transform: translate(-50%, -50%); }
-            .shop-row { padding: 6px; }
-            .shop-btn { padding: 6px 8px; font-size: 11px; }
+            #shop-content { max-height: calc(80dvh - 52px); }
+            .shop-row { padding: 5px 6px; }
+            .shop-btn { padding: 5px 8px; font-size: 10px; }
         }
 
         /* ===================================
-           📟 平板介面 (601px ~ 1024px)
+           📟 平板介面 (601px ~ 1024px)  上半地圖 / 下半 UI
            =================================== */
         @media (min-width: 601px) and (max-width: 1024px) {
-            .ro-panel { font-size: 12px; }
+            /* 桌面浮動面板全部隱藏 */
+            #status-window, #stat-window, #inventory-window,
+            #save-window, #skill-window, #chat-window { display: none !important; }
+            .mobile-ui { display: none !important; }
 
-            /* 狀態欄：頂部橫條，更寬鬆 */
-            #status-window {
-                top: 0; left: 0; right: 0; width: 100%;
-                border-radius: 0; border-left: none; border-right: none; border-top: none;
-                display: flex; flex-direction: row; gap: 14px; align-items: center; padding: 6px 14px;
-                z-index: 100;
+            /* game-container: 上半 50vh */
+            #game-container { height: 50dvh; flex: none; }
+
+            /* 啟用下半 UI */
+            #bottom-ui { display: flex; height: 50dvh; }
+
+            /* 平板搖桿稍大 */
+            .joystick-zone { width: 110px; height: 110px; }
+            .joystick-stick { width: 42px; height: 42px; top: 34px; left: 34px; }
+            .mobile-action-btn { width: 64px; height: 64px; font-size: 11px; }
+            #bottom-ui .ro-panel { font-size: 11px; }
+            #bottom-ui .inv-slot { font-size: 10px; }
+
+            /* 商店 */
+            #shop-window {
+                position: fixed; top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                width: 400px; max-height: 80dvh; z-index: 500;
             }
-            #job-title { font-size: 13px; white-space: nowrap; margin-bottom: 0; flex-shrink: 0; }
-            .bar-group { flex: 1; }
-            .ro-bar { height: 9px; }
-            .zeny-row { font-size: 12px; white-space: nowrap; }
-
-            /* 素質配點：放置左側 */
-            #stat-window { top: auto; bottom: 200px; left: 10px; right: auto; width: 175px; }
-            .stat-btn { width: 24px; height: 24px; font-size: 14px; }
-
-            /* 存檔：隱藏（平板用手機模式存不太好操作，可開啟） */
-            #save-window { top: auto; bottom: 10px; left: 10px; right: auto; width: 175px; }
-
-            /* 背包：右側正常 */
-            #inventory-window { top: 60px; right: 12px; width: 180px; }
-            .inv-slot { padding: 5px 7px; }
-            .use-btn { font-size: 11px; padding: 4px 8px; }
-
-            /* 技能欄：右下角 */
-            #skill-window { bottom: 175px; right: 12px; width: 175px; }
-            .skill-btn { padding: 9px 10px; font-size: 13px; }
-
-            /* 聊天室：左下角 */
-            #chat-window { bottom: 0; left: 0; width: 300px; height: 100px; border-radius: 0; border-left: none; border-bottom: none; }
-
-            /* 搖桿與行動按鈕 */
-            .mobile-ui { bottom: 108px; padding: 0 18px; }
-            .joystick-zone { width: 120px; height: 120px; }
-            .joystick-stick { width: 48px; height: 48px; top: 36px; left: 36px; }
-            .mobile-action-buttons { gap: 8px; }
-            .mobile-action-btn { width: 70px; height: 70px; font-size: 12px; }
-
-            /* 商店視窗 */
-            #shop-window { width: 340px; }
-            .shop-btn { padding: 7px 12px; font-size: 12px; }
+            #shop-content { max-height: calc(80dvh - 52px); }
         }
 
-        /* 桌面：隱藏行動按鈕 */
+        /* 桌面：bottom-ui 隱藏，保留原浮動面板與搖桿隱藏 */
         @media (min-width: 1025px) {
+            #bottom-ui { display: none !important; }
             .mobile-action-buttons { display: none; }
             .joystick-zone { display: none; }
+            /* 桌面 game-container 撐滿全高 */
+            #game-container { height: 100dvh !important; flex: 1; }
         }
     </style>
 </head>
@@ -323,13 +332,73 @@
     <input type="text" id="chat-input" placeholder="輸入聊天訊息..." onkeydown="sendPlayerChat(event)">
 </div>
 
-<div class="mobile-ui">
-    <div class="joystick-zone" id="joystick"><div class="joystick-stick" id="stick"></div></div>
-    <div class="mobile-action-buttons">
-        <button class="mobile-action-btn btn-skill" onclick="triggerBashSkill()">⚡<br>狂擊</button>
-        <button class="mobile-action-btn btn-hp-pot" onclick="useRedPotion()">❤️<br>紅水</button>
-        <button class="mobile-action-btn btn-sp-pot" onclick="useBluePotion()">💧<br>藍水</button>
+<!-- 手機/平板下半部 UI 面板 -->
+<div id="bottom-ui">
+    <!-- 頂列：狀態條 -->
+    <div id="bottom-status">
+        <div id="job-title-m" style="font-size:10px;font-weight:bold;color:#aed6f1;white-space:nowrap;flex-shrink:0;">🧙 Lv.1</div>
+        <div class="bar-group" style="flex:1;min-width:50px;">
+            <div style="display:flex;justify-content:space-between;font-size:8px;color:#eee;"><span>❤️</span><span id="hp-text-m">100/100</span></div>
+            <div class="ro-bar" style="height:6px;"><div id="hp-fill-m" class="ro-bar-fill ro-hp-fill" style="width:100%"></div></div>
+        </div>
+        <div class="bar-group" style="flex:1;min-width:50px;">
+            <div style="display:flex;justify-content:space-between;font-size:8px;color:#eee;"><span>💧</span><span id="sp-text-m">40/40</span></div>
+            <div class="ro-bar" style="height:6px;"><div id="sp-fill-m" class="ro-bar-fill ro-sp-fill" style="width:100%"></div></div>
+        </div>
+        <div class="bar-group" style="flex:1;min-width:50px;">
+            <div style="display:flex;justify-content:space-between;font-size:8px;color:#eee;"><span>✨EXP</span><span id="exp-text-m">0%</span></div>
+            <div class="ro-bar" style="height:6px;"><div id="exp-fill-m" class="ro-bar-fill ro-exp-fill" style="width:0%"></div></div>
+        </div>
+        <div style="font-size:9px;font-weight:bold;color:#f1c40f;white-space:nowrap;flex-shrink:0;">💰<span id="zeny-text-m">500</span>z</div>
     </div>
+
+    <!-- 主區 -->
+    <div id="bottom-main">
+        <!-- 左：搖桿 -->
+        <div id="bottom-joystick">
+            <div class="joystick-zone" id="joystick"><div class="joystick-stick" id="stick"></div></div>
+        </div>
+
+        <!-- 中：背包 + 儲存 -->
+        <div id="bottom-info">
+            <div class="ro-panel" style="position:relative;">
+                <div class="ro-panel-title">🎒 背包</div>
+                <div class="inv-slot"><span>⚔️</span><span id="eq-weapon-m" style="color:#c0392b;font-size:9px;font-weight:bold;">🪵 幼木棒</span></div>
+                <div class="inv-slot"><span>💎 結晶:</span><span id="inv-loot-m" style="color:#7d3c98;">x0</span></div>
+                <div class="inv-slot"><span>❤️</span><span><b id="inv-red-m">x0</b> <button class="use-btn use-btn-red" onclick="useRedPotion()">用</button></span></div>
+                <div class="inv-slot"><span>💧</span><span><b id="inv-blue-m">x0</b> <button class="use-btn use-btn-blue" onclick="useBluePotion()">用</button></span></div>
+            </div>
+            <div class="ro-panel" style="position:relative;">
+                <div class="ro-panel-title">💾 儲存</div>
+                <button class="save-btn" onclick="exportLocalSave()">📥 匯出</button>
+                <button class="save-btn" onclick="document.getElementById('import-file-m').click()">📂 匯入</button>
+                <input type="file" id="import-file-m" accept=".json" style="display:none;" onchange="importLocalSave(event)">
+                <button class="save-btn gdrive" id="gdrive-login-btn-m" onclick="handleAuthClick()">🔗 Google</button>
+                <button class="save-btn gdrive" id="gdrive-save-btn-m" onclick="uploadToDrive()" style="display:none;">☁️ 存雲端</button>
+                <button class="save-btn gdrive" id="gdrive-load-btn-m" onclick="loadFromDrive()" style="display:none;">🔄 載入</button>
+            </div>
+        </div>
+
+        <!-- 右：動作按鈕 -->
+        <div id="bottom-actions">
+            <button class="mobile-action-btn btn-skill" onclick="triggerBashSkill()">⚡<br>狂擊</button>
+            <button class="mobile-action-btn btn-hp-pot" onclick="useRedPotion()">❤️<br>紅水</button>
+            <button class="mobile-action-btn btn-sp-pot" onclick="useBluePotion()">💧<br>藍水</button>
+        </div>
+    </div>
+
+    <!-- 底列：聊天 -->
+    <div id="bottom-chat">
+        <div id="chat-log-m" style="flex:1;overflow-y:auto;font-size:9px;color:#ddd;max-height:40px;line-height:1.3;"></div>
+        <input type="text" id="chat-input-m" placeholder="聊天…" onkeydown="sendPlayerChatM(event)"
+               style="font-size:9px;padding:3px 5px;border:1px solid #4a6d96;border-radius:3px;background:rgba(255,255,255,0.1);color:#fff;width:80px;outline:none;flex-shrink:0;">
+    </div>
+</div>
+
+<!-- 保留桌面搖桿（桌面隱藏，手機也被 #bottom-ui 取代故隱藏） -->
+<div class="mobile-ui" style="display:none;">
+    <div class="joystick-zone" id="joystick-desk"><div class="joystick-stick" id="stick-desk"></div></div>
+    <div class="mobile-action-buttons"></div>
 </div>
 
 <script>
@@ -343,14 +412,12 @@
 
     const config = {
         type: Phaser.AUTO,
-        width: 800,
-        height: 600,
         parent: 'game-container',
         scale: {
-            mode: Phaser.Scale.FIT,
-            autoCenter: Phaser.Scale.CENTER_BOTH,
-            width: 800,
-            height: 600,
+            mode: Phaser.Scale.RESIZE,
+            autoCenter: Phaser.Scale.NO_CENTER,
+            width: window.innerWidth,
+            height: window.innerHeight,
         },
         physics: { default: 'arcade', arcade: { y: 0 } },
         scene: { preload: preload, create: create, update: update }
@@ -461,15 +528,26 @@
         gapiLoaded();
         gisLoaded();
 
-        // 修正手機初始渲染：強制 Phaser Scale Manager 在 DOM 完全就緒後刷新
+        // RESIZE 模式：每次視窗大小改變時更新相機
         scene.scale.on('resize', (gameSize) => {
             scene.cameras.main.setSize(gameSize.width, gameSize.height);
+            scene.cameras.main.setBounds(0, 0, 2000, 2000);
         });
-        // 延遲一幀強制觸發一次 resize，解決手機首次渲染黑屏問題
-        setTimeout(() => {
-            game.scale.refresh();
-            scene.cameras.main.setSize(game.scale.gameSize.width, game.scale.gameSize.height);
-        }, 100);
+        // 手機/平板：讓 Phaser canvas 高度符合 #game-container（上半部）
+        function syncCanvasHeight() {
+            const gc = document.getElementById('game-container');
+            if (!gc) return;
+            const h = gc.clientHeight;
+            const w = gc.clientWidth;
+            if (h > 0 && w > 0) {
+                game.scale.resize(w, h);
+                scene.cameras.main.setSize(w, h);
+                scene.cameras.main.setBounds(0, 0, 2000, 2000);
+            }
+        }
+        window.addEventListener('resize', syncCanvasHeight);
+        setTimeout(syncCanvasHeight, 50);
+        setTimeout(syncCanvasHeight, 300);
     }
 
     function update(time) {
@@ -810,24 +888,50 @@
         }
     }
 
+    function _setEl(id, val, prop) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (prop === 'width') el.style.width = val;
+        else el.textContent = val;
+    }
     function updateUI() {
-        document.getElementById('job-title').textContent = `🧙‍♂️ 冒險者 (Lv.${playerData.level})`;
-        document.getElementById('hp-text').textContent = `${playerData.hp}/${playerData.maxHp}`;
-        document.getElementById('hp-fill').style.width = `${(playerData.hp / playerData.maxHp) * 100}%`;
-        document.getElementById('sp-text').textContent = `${playerData.sp}/${playerData.maxSp}`;
-        document.getElementById('sp-fill').style.width = `${(playerData.sp / playerData.maxSp) * 100}%`;
-        document.getElementById('exp-text').textContent = `${Math.floor((playerData.exp / playerData.nextExp)*100)}%`;
-        document.getElementById('exp-fill').style.width = `${(playerData.exp / playerData.nextExp) * 100}%`;
-        
-        document.getElementById('zeny-text').textContent = playerData.zeny;
-        document.getElementById('inv-loot').textContent = `結晶 x${playerData.lootCount}`;
-        document.getElementById('inv-blue-pot').textContent = `x${playerData.bluePotions}`;
-        document.getElementById('eq-weapon').textContent = playerData.weaponText;
-        
-        document.getElementById('stat-pts').textContent = playerData.points;
-        document.getElementById('p-str').textContent = playerData.str;
-        document.getElementById('p-agi').textContent = playerData.agi;
-        document.getElementById('p-vit').textContent = playerData.vit;
+        const lvl = playerData.level;
+        const hpPct = (playerData.hp / playerData.maxHp) * 100 + '%';
+        const spPct = (playerData.sp / playerData.maxSp) * 100 + '%';
+        const expPct = (playerData.exp / playerData.nextExp) * 100 + '%';
+        const expTxt = Math.floor((playerData.exp / playerData.nextExp)*100) + '%';
+
+        // 桌面面板
+        _setEl('job-title',  `🧙‍♂️ 冒險者 (Lv.${lvl})`);
+        _setEl('hp-text',    `${playerData.hp}/${playerData.maxHp}`);
+        _setEl('hp-fill',    hpPct, 'width');
+        _setEl('sp-text',    `${playerData.sp}/${playerData.maxSp}`);
+        _setEl('sp-fill',    spPct, 'width');
+        _setEl('exp-text',   expTxt);
+        _setEl('exp-fill',   expPct, 'width');
+        _setEl('zeny-text',  playerData.zeny);
+        _setEl('inv-loot',   `結晶 x${playerData.lootCount}`);
+        _setEl('inv-blue-pot', `x${playerData.bluePotions}`);
+        _setEl('inv-red-pot',  `x${playerData.redPotions || 0}`);
+        _setEl('eq-weapon',  playerData.weaponText);
+        _setEl('stat-pts',   playerData.points);
+        _setEl('p-str',      playerData.str);
+        _setEl('p-agi',      playerData.agi);
+        _setEl('p-vit',      playerData.vit);
+
+        // 手機 bottom-ui 面板
+        _setEl('job-title-m', `🧙 Lv.${lvl}`);
+        _setEl('hp-text-m',   `${playerData.hp}/${playerData.maxHp}`);
+        _setEl('hp-fill-m',   hpPct, 'width');
+        _setEl('sp-text-m',   `${playerData.sp}/${playerData.maxSp}`);
+        _setEl('sp-fill-m',   spPct, 'width');
+        _setEl('exp-text-m',  expTxt);
+        _setEl('exp-fill-m',  expPct, 'width');
+        _setEl('zeny-text-m', playerData.zeny);
+        _setEl('inv-loot-m',  `x${playerData.lootCount}`);
+        _setEl('inv-blue-m',  `x${playerData.bluePotions}`);
+        _setEl('inv-red-m',   `x${playerData.redPotions || 0}`);
+        _setEl('eq-weapon-m', playerData.weaponText);
     }
 
     function spawnMonster(scene) {
@@ -911,32 +1015,42 @@
     function sendPlayerChat(e) {
         if(e.key === 'Enter') {
             const input = document.getElementById('chat-input');
-            if(input.value.trim() !== "") { logChat("玩家", input.value); input.value = ""; }
+            if(input && input.value.trim() !== "") { logChat("玩家", input.value); input.value = ""; }
+        }
+    }
+    function sendPlayerChatM(e) {
+        if(e.key === 'Enter') {
+            const input = document.getElementById('chat-input-m');
+            if(input && input.value.trim() !== "") { logChat("玩家", input.value); input.value = ""; }
         }
     }
 
     function logChat(sender, msg) {
-        const log = document.getElementById('chat-log');
-        log.innerHTML += `<div><strong>[${sender}]:</strong> ${msg}</div>`;
-        log.scrollTop = log.scrollHeight;
+        const line = `<div><strong>[${sender}]:</strong> ${msg}</div>`;
+        const logD = document.getElementById('chat-log');
+        if (logD) { logD.innerHTML += line; logD.scrollTop = logD.scrollHeight; }
+        const logM = document.getElementById('chat-log-m');
+        if (logM) { logM.innerHTML += line; logM.scrollTop = logM.scrollHeight; }
     }
 
     function setupJoystick() {
         const joystick = document.getElementById('joystick');
-        const stick = document.getElementById('stick');
-        joystick.addEventListener('touchstart', () => isJoystickActive = true);
-        joystick.addEventListener('touchmove', (e) => {
+        const stick    = document.getElementById('stick');
+        if (!joystick || !stick) return;
+        const R = joystick.offsetWidth / 2 || 44;
+        const MAX = R * 0.55;
+        function onMove(cx, cy) {
             const rect = joystick.getBoundingClientRect();
-            let x = e.touches[0].clientX - (rect.left + 45);
-            let y = e.touches[0].clientY - (rect.top + 45);
+            let x = cx - (rect.left + R);
+            let y = cy - (rect.top  + R);
             const dist = Math.sqrt(x*x + y*y);
-            if(dist > 25) { x=(x/dist)*25; y=(y/dist)*25; }
+            if (dist > MAX) { x = (x/dist)*MAX; y = (y/dist)*MAX; }
             stick.style.transform = `translate(${x}px, ${y}px)`;
-            joystickDelta = { x: x/25, y: y/25 };
-        });
-        joystick.addEventListener('touchend', () => {
-            isJoystickActive = false; stick.style.transform = 'translate(0px,0px)'; joystickDelta = {x:0, y:0};
-        });
+            joystickDelta = { x: x/MAX, y: y/MAX };
+        }
+        joystick.addEventListener('touchstart', (e) => { e.preventDefault(); isJoystickActive = true; }, { passive: false });
+        joystick.addEventListener('touchmove',  (e) => { e.preventDefault(); onMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+        joystick.addEventListener('touchend',   ()  => { isJoystickActive = false; stick.style.transform = 'translate(0,0)'; joystickDelta = {x:0,y:0}; });
     }
 
     // =========================================================================
