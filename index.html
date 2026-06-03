@@ -23,7 +23,9 @@
 
         * { box-sizing: border-box; }
         body { margin: 0; padding: 0; background-color: #000; overflow: hidden; font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; user-select: none; touch-action: none; }
-        #game-container { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+
+        #game-container canvas { display: block; max-width: 100%; max-height: 100%; }
+        #game-container { width: 100dvw; height: 100dvh; display: flex; justify-content: center; align-items: center; overflow: hidden; background: #000; }
         
         /* ===== 核心面板樣式 ===== */
         .ro-panel {
@@ -341,9 +343,15 @@
 
     const config = {
         type: Phaser.AUTO,
-        width: Math.floor(window.innerWidth * 0.8),
-        height: Math.floor(window.innerHeight * 0.8),
+        width: 800,
+        height: 600,
         parent: 'game-container',
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: 800,
+            height: 600,
+        },
         physics: { default: 'arcade', arcade: { y: 0 } },
         scene: { preload: preload, create: create, update: update }
     };
@@ -452,6 +460,16 @@
         // 初始化 Google API 機制
         gapiLoaded();
         gisLoaded();
+
+        // 修正手機初始渲染：強制 Phaser Scale Manager 在 DOM 完全就緒後刷新
+        scene.scale.on('resize', (gameSize) => {
+            scene.cameras.main.setSize(gameSize.width, gameSize.height);
+        });
+        // 延遲一幀強制觸發一次 resize，解決手機首次渲染黑屏問題
+        setTimeout(() => {
+            game.scale.refresh();
+            scene.cameras.main.setSize(game.scale.gameSize.width, game.scale.gameSize.height);
+        }, 100);
     }
 
     function update(time) {
