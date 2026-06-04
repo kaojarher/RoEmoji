@@ -294,8 +294,11 @@
 
 <div id="inventory-window" class="ro-panel">
     <div class="ro-panel-title">🎒 背包 (Bag)</div>
-    <div class="inv-slot"><span>⚔️ 武器:</span><span id="eq-weapon" style="color:#c0392b; font-weight:bold;">🪵 幼木棒</span></div>
-    <div class="inv-slot"><span>💎 結晶:</span><span id="inv-loot" style="color:#7d3c98;">結晶 x0</span></div>
+    <div class="inv-slot"><span>⚔️ 武器:</span><span id="eq-weapon" style="color:#c0392b;font-weight:bold;">（無武器）</span></div>
+    <div class="inv-slot"><span>🛡️ 防具:</span><span id="eq-armor"  style="color:#2471a3;font-weight:bold;">（無防具）</span></div>
+    <div class="inv-slot"><span>⛑️ 頭盔:</span><span id="eq-helmet" style="color:#7d3c98;font-weight:bold;">（無頭盔）</span></div>
+    <div class="inv-slot"><span>🔰 防禦:</span><span id="stat-def"  style="color:#1e8449;font-weight:bold;">0</span></div>
+    <div class="inv-slot"><span>💎 結晶:</span><span id="inv-loot"  style="color:#7d3c98;">結晶 x0</span></div>
     <div class="inv-slot"><span>❤️ 紅水:</span><span><b id="inv-red-pot">x0</b> <button class="use-btn use-btn-red" onclick="useRedPotion()">使用</button></span></div>
     <div class="inv-slot"><span>💧 藍水:</span><span><b id="inv-blue-pot">x0</b> <button class="use-btn use-btn-blue" onclick="useBluePotion()">使用</button></span></div>
 </div>
@@ -363,8 +366,9 @@
         <div id="bottom-info">
             <div class="ro-panel" style="position:relative;">
                 <div class="ro-panel-title">🎒 背包</div>
-                <div class="inv-slot"><span>⚔️</span><span id="eq-weapon-m" style="color:#c0392b;font-size:9px;font-weight:bold;">🪵 幼木棒</span></div>
-                <div class="inv-slot"><span>💎 結晶:</span><span id="inv-loot-m" style="color:#7d3c98;">x0</span></div>
+                <div class="inv-slot"><span>⚔️</span><span id="eq-weapon-m" style="color:#c0392b;font-size:9px;font-weight:bold;">（無武器）</span></div>
+                <div class="inv-slot"><span>🛡️</span><span id="eq-armor-m"  style="color:#2471a3;font-size:9px;font-weight:bold;">（無防具）</span></div>
+                <div class="inv-slot"><span>💎</span><span id="inv-loot-m" style="color:#7d3c98;">x0</span></div>
                 <div class="inv-slot"><span>❤️</span><span><b id="inv-red-m">x0</b> <button class="use-btn use-btn-red" onclick="useRedPotion()">用</button></span></div>
                 <div class="inv-slot"><span>💧</span><span><b id="inv-blue-m">x0</b> <button class="use-btn use-btn-blue" onclick="useBluePotion()">用</button></span></div>
             </div>
@@ -457,18 +461,35 @@
     } else {
         window.addEventListener('load', () => setTimeout(_tryLaunch, 0));
     }
-    let player, playerOutfit;
-    
-    // 擴充包含貨幣（Zeny）與藥水儲備的資料結構
+    // 疊圖用的 Phaser.GameObjects.Text 參照
+    let player;
+    let spriteBody, spriteArmor, spriteWeapon, spriteHelmet;
+
+    // 各部位疊圖定義表
+    const SPRITE_LAYERS = {
+        body:   { emoji: "🧍", font: "40px Arial", x: -20, y: -18 },
+        armor:  { emoji: "",   font: "34px Arial", x: -18, y: -16 },   // 預設無防具
+        weapon: { emoji: "",   font: "28px Arial", x:  10, y: -10 },   // 預設無武器（手持）
+        helmet: { emoji: "",   font: "26px Arial", x: -20, y: -50 },   // 預設無頭盔
+    };
+
+    // 擴充包含貨幣（Zeny）與防具欄位的資料結構
     let playerData = {
         level: 1, exp: 0, nextExp: 100,
         hp: 100, maxHp: 100,
         sp: 40, maxSp: 40,
         str: 5, agi: 5, vit: 5, points: 5,
-        baseAtk: 10, bonusAtk: 0, 
+        baseAtk: 10, bonusAtk: 0,
+        bonusDef: 0,                     // 防禦加成
         lootCount: 0, bluePotions: 2, zeny: 500,
         lastAttackTime: 0,
-        weaponText: "🪵 幼木棒", // 新增追蹤武器文字以便存檔
+        // 裝備欄
+        weaponText:  "（無武器）",
+        armorText:   "（無防具）",
+        helmetText:  "（無頭盔）",
+        weaponEmoji:  "",
+        armorEmoji:   "",
+        helmetEmoji:  "",
         get attackCooldown() { return Math.max(250, 1000 - (this.agi * 45)); }
     };
 
@@ -518,12 +539,28 @@
         itemNpc.setData('type', 'item');
         npcs.add(itemNpc);
 
-        // --- 4. 玩家初始化 ---
-        const playerText = scene.add.text(-20, -20, "🧍", { font: "40px Arial" });
-        playerOutfit = scene.add.text(-25, -45, "🧙‍♂️", { font: "28px Arial" });
-        player = scene.add.container(200, 300, [playerText, playerOutfit]); // 出生在城鎮安全區
+        // 防具商人
+        const armorNpc = scene.add.container(215, 280);
+        armorNpc.add(scene.add.text(-20, -20, "🛡️", { font: "36px Arial" }));
+        armorNpc.add(scene.add.text(-35, 20, "防具商人", { font: "bold 12px Arial", fill: "#5dade2", backgroundColor: "#000" }));
+        scene.physics.world.enable(armorNpc, Phaser.Physics.Arcade.STATIC_BODY);
+        armorNpc.body.setSize(50, 50);
+        armorNpc.setData('type', 'armor');
+        npcs.add(armorNpc);
+
+        // --- 4. 玩家初始化（多層疊圖） ---
+        // 層 0：身體底圖
+        spriteBody   = scene.add.text(SPRITE_LAYERS.body.x,   SPRITE_LAYERS.body.y,   SPRITE_LAYERS.body.emoji,   { font: SPRITE_LAYERS.body.font });
+        // 層 1：防具（穿在身體上）
+        spriteArmor  = scene.add.text(SPRITE_LAYERS.armor.x,  SPRITE_LAYERS.armor.y,  SPRITE_LAYERS.armor.emoji,  { font: SPRITE_LAYERS.armor.font });
+        // 層 2：武器（右手持握，偏右下）
+        spriteWeapon = scene.add.text(SPRITE_LAYERS.weapon.x, SPRITE_LAYERS.weapon.y, SPRITE_LAYERS.weapon.emoji, { font: SPRITE_LAYERS.weapon.font });
+        // 層 3：頭盔（頭頂）
+        spriteHelmet = scene.add.text(SPRITE_LAYERS.helmet.x, SPRITE_LAYERS.helmet.y, SPRITE_LAYERS.helmet.emoji, { font: SPRITE_LAYERS.helmet.font });
+
+        player = scene.add.container(200, 300, [spriteBody, spriteArmor, spriteWeapon, spriteHelmet]);
         scene.physics.world.enable(player);
-        player.body.setCollideWorldBounds(true).setSize(45,45);
+        player.body.setCollideWorldBounds(true).setSize(45, 45);
 
         // 阻擋玩家與 NPC 重疊穿透
         scene.physics.add.collider(player, npcs, handleNpcInteract, null, this);
@@ -674,6 +711,48 @@
                     <button class="shop-btn shop-btn-buy" onclick="buyItem('weapon_7',8888)">8888z</button>
                 </div>
             `;
+        } else if(type === 'armor') {
+            shopTitle.textContent = "🛡️ 龍瓦特防具工坊";
+            shopContent.innerHTML = `
+                <div class="shop-section-title">🥋 輕甲系列</div>
+                <div class="shop-row row-normal">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🥋 皮革輕甲 <span class="grade grade-normal">普通</span></div>
+                        <div class="shop-item-desc">DEF +5｜附⛑️皮帽｜初心者護身</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('armor_1',200)">200z</button>
+                </div>
+                <div class="shop-section-title">🛡️ 重甲系列</div>
+                <div class="shop-row row-magic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🛡️ 鋼鐵胸甲 <span class="grade grade-magic">魔法</span></div>
+                        <div class="shop-item-desc">DEF +12｜附🪖鋼盔｜防禦大幅提升</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('armor_2',600)">600z</button>
+                </div>
+                <div class="shop-row row-rare">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">⚜️ 騎士重甲 <span class="grade grade-rare">稀有</span></div>
+                        <div class="shop-item-desc">DEF +22｜附👑騎士冠｜勇者之甲</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('armor_3',1500)">1500z</button>
+                </div>
+                <div class="shop-section-title">🔰 神話系列</div>
+                <div class="shop-row row-epic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🔰 龍鱗神甲 <span class="grade grade-epic">史詩</span></div>
+                        <div class="shop-item-desc">DEF +38｜附🎭龍面具｜龍族傳承</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('armor_4',4000)">4000z</button>
+                </div>
+                <div class="shop-row row-legend">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">💎 傳說聖甲 <span class="grade grade-legend">傳說</span></div>
+                        <div class="shop-item-desc">DEF +60｜附✨聖光冠｜神明庇護</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('armor_5',9999)">9999z</button>
+                </div>
+            `;
         } else if(type === 'item') {
             shopTitle.textContent = "🧪 普隆德拉連鎖藥局";
             shopContent.innerHTML = `
@@ -746,16 +825,34 @@
     }
 
     // --- 商業買賣核心演算交易模組 ---
+    // ── 武器表：emoji 會疊在角色右手位置 ──
     const WEAPON_TABLE = {
-        weapon_0: { atk: 5,   text: "🪵 幼木棒 (+5)",       name: "幼木棒" },
-        weapon_1: { atk: 15,  text: "🗡️ 鋼鐵短劍 (+15)",    name: "鋼鐵短劍" },
-        weapon_2: { atk: 25,  text: "🔮 魔晶劍 (+25)",       name: "魔晶劍" },
-        weapon_3: { atk: 40,  text: "🌀 深淵魔刃 (+40)",     name: "深淵魔刃" },
-        weapon_4: { atk: 35,  text: "🔱 燕尖矛 (+35)",       name: "燕尖矛" },
-        weapon_5: { atk: 50,  text: "⚡ 雷霆長槍 (+50)",     name: "雷霆長槍" },
-        weapon_6: { atk: 75,  text: "🔥 炎神破軍槍 (+75)",   name: "炎神破軍槍" },
-        weapon_7: { atk: 110, text: "🌟 星滅神劍 (+110)",    name: "星滅神劍" },
+        weapon_0: { atk: 5,   emoji: "",    text: "🪵 幼木棒 (+5)",       name: "幼木棒" },
+        weapon_1: { atk: 15,  emoji: "🗡️",  text: "🗡️ 鋼鐵短劍 (+15)",   name: "鋼鐵短劍" },
+        weapon_2: { atk: 25,  emoji: "🔮",  text: "🔮 魔晶劍 (+25)",      name: "魔晶劍" },
+        weapon_3: { atk: 40,  emoji: "🌀",  text: "🌀 深淵魔刃 (+40)",    name: "深淵魔刃" },
+        weapon_4: { atk: 35,  emoji: "🔱",  text: "🔱 燕尖矛 (+35)",      name: "燕尖矛" },
+        weapon_5: { atk: 50,  emoji: "⚡",  text: "⚡ 雷霆長槍 (+50)",    name: "雷霆長槍" },
+        weapon_6: { atk: 75,  emoji: "🔥",  text: "🔥 炎神破軍槍 (+75)",  name: "炎神破軍槍" },
+        weapon_7: { atk: 110, emoji: "🌟",  text: "🌟 星滅神劍 (+110)",   name: "星滅神劍" },
     };
+
+    // ── 防具表：emoji 疊在身體上；頭盔另外一層 ──
+    const ARMOR_TABLE = {
+        armor_1: { def: 5,  emoji: "🥋", helmet: "⛑️",  text: "🥋 皮革輕甲 (+5Def)",    name: "皮革輕甲",   grade: "normal" },
+        armor_2: { def: 12, emoji: "🛡️", helmet: "🪖",  text: "🛡️ 鋼鐵胸甲 (+12Def)",  name: "鋼鐵胸甲",  grade: "magic"  },
+        armor_3: { def: 22, emoji: "⚜️", helmet: "👑",  text: "⚜️ 騎士重甲 (+22Def)",  name: "騎士重甲",  grade: "rare"   },
+        armor_4: { def: 38, emoji: "🔰", helmet: "🎭",  text: "🔰 龍鱗神甲 (+38Def)",   name: "龍鱗神甲",  grade: "epic"   },
+        armor_5: { def: 60, emoji: "💎", helmet: "✨",  text: "💎 傳說聖甲 (+60Def)",   name: "傳說聖甲",  grade: "legend" },
+    };
+
+    // 同步疊圖到 Phaser sprite
+    function updateSprite() {
+        if (!spriteWeapon || !spriteArmor || !spriteHelmet) return;
+        spriteWeapon.setText(playerData.weaponEmoji || "");
+        spriteArmor.setText(playerData.armorEmoji   || "");
+        spriteHelmet.setText(playerData.helmetEmoji  || "");
+    }
 
     function buyItem(itemId, cost) {
         if(playerData.zeny < cost) {
@@ -766,9 +863,20 @@
 
         if(WEAPON_TABLE[itemId]) {
             const w = WEAPON_TABLE[itemId];
-            playerData.bonusAtk = w.atk;
-            playerData.weaponText = w.text;
-            logChat("商店", `🛍️ 成功購買並裝備了 [${w.name}]！攻擊力 +${w.atk}`);
+            playerData.bonusAtk   = w.atk;
+            playerData.weaponText  = w.text;
+            playerData.weaponEmoji = w.emoji;
+            updateSprite();
+            logChat("商店", `🛍️ 裝備了 [${w.name}]！ATK +${w.atk}`);
+        } else if(ARMOR_TABLE[itemId]) {
+            const a = ARMOR_TABLE[itemId];
+            playerData.bonusDef   = a.def;
+            playerData.armorText   = a.text;
+            playerData.armorEmoji  = a.emoji;
+            playerData.helmetEmoji = a.helmet;
+            playerData.helmetText  = a.name + " 頭盔";
+            updateSprite();
+            logChat("商店", `🛍️ 裝備了 [${a.name}]！DEF +${a.def}`);
         } else if(itemId === 'red_pot_s') {
             playerData.redPotions = (playerData.redPotions || 0) + 1;
             playerData._redPotHeal = 30;
@@ -853,7 +961,9 @@
             showPopText(scene, monster.x, monster.y - 20, dmg, "#f1c40f");
 
             if (monster.hp > 0) {
-                const monsterDmg = Phaser.Math.Between(4, 8);
+                const rawDmg = Phaser.Math.Between(4, 8);
+                const def = (playerData.bonusDef || 0) + Math.floor(playerData.vit / 3);
+                const monsterDmg = Math.max(1, rawDmg - def);
                 playerData.hp = Math.max(0, playerData.hp - monsterDmg);
                 updateUI();
                 showPopText(scene, player.x, player.y - 20, monsterDmg, "#e74c3c");
@@ -957,7 +1067,10 @@
         _setEl('inv-blue-pot', `x${playerData.bluePotions}`);
         _setEl('inv-red-pot',  `x${playerData.redPotions || 0}`);
         _setEl('eq-weapon',  playerData.weaponText);
+        _setEl('eq-armor',   playerData.armorText  || '（無防具）');
+        _setEl('eq-helmet',  playerData.helmetText || '（無頭盔）');
         _setEl('stat-pts',   playerData.points);
+        _setEl('stat-def',   (playerData.bonusDef || 0) + Math.floor(playerData.vit / 3));
         _setEl('p-str',      playerData.str);
         _setEl('p-agi',      playerData.agi);
         _setEl('p-vit',      playerData.vit);
@@ -975,6 +1088,8 @@
         _setEl('inv-blue-m',  `x${playerData.bluePotions}`);
         _setEl('inv-red-m',   `x${playerData.redPotions || 0}`);
         _setEl('eq-weapon-m', playerData.weaponText);
+        _setEl('eq-armor-m',  playerData.armorText  || '（無防具）');
+        updateSprite();
     }
 
     function spawnMonster(scene) {
@@ -1115,7 +1230,13 @@
             vit: playerData.vit,
             points: playerData.points,
             baseAtk: playerData.baseAtk,
-            bonusAtk: playerData.bonusAtk,
+            bonusAtk:    playerData.bonusAtk,
+            bonusDef:    playerData.bonusDef    || 0,
+            weaponEmoji: playerData.weaponEmoji || "",
+            armorText:   playerData.armorText   || "（無防具）",
+            armorEmoji:  playerData.armorEmoji  || "",
+            helmetText:  playerData.helmetText  || "（無頭盔）",
+            helmetEmoji: playerData.helmetEmoji || "",
             lootCount: playerData.lootCount,
             bluePotions: playerData.bluePotions,
             redPotions: playerData.redPotions || 0,
@@ -1144,7 +1265,13 @@
             playerData.vit = data.vit;
             playerData.points = data.points;
             playerData.baseAtk = data.baseAtk;
-            playerData.bonusAtk = data.bonusAtk;
+            playerData.bonusAtk    = data.bonusAtk    || 0;
+            playerData.bonusDef    = data.bonusDef    || 0;
+            playerData.weaponEmoji = data.weaponEmoji || "";
+            playerData.armorText   = data.armorText   || "（無防具）";
+            playerData.armorEmoji  = data.armorEmoji  || "";
+            playerData.helmetText  = data.helmetText  || "（無頭盔）";
+            playerData.helmetEmoji = data.helmetEmoji || "";
             playerData.lootCount = data.lootCount;
             playerData.bluePotions = data.bluePotions;
             playerData.redPotions = data.redPotions || 0;
@@ -1154,6 +1281,7 @@
             playerData.weaponText = data.weaponText || "🪵 幼木棒";
             
             updateUI();
+            updateSprite();
             logChat("系統", `💾 存檔載入成功！目前等級: Lv.${playerData.level}`);
             return true;
         } catch (e) {
