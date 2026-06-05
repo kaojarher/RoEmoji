@@ -1015,9 +1015,9 @@
         const hasMount = !!playerData.mountEmoji;
         const S = hasMount ? MOUNT_SHIFT : 0;  // 有坐騎時整體上移
 
-        // 層4：坐騎（y=0 腰部，有坐騎才顯示）
+        // 層4：坐騎（跟著整體上移 S，緊接上衣底部）
         spriteMount.setText(hasMount ? playerData.mountEmoji : "");
-        spriteMount.setPosition(SPRITE_LAYERS.mount.x, SPRITE_LAYERS.mount.y);
+        spriteMount.setPosition(SPRITE_LAYERS.mount.x, SPRITE_LAYERS.mount.y + S);
 
         // 層0：身體 👦（頭頂 y=-36+S，臉永遠在上衣之上）
         spriteBody.setPosition(SPRITE_LAYERS.body.x, SPRITE_LAYERS.body.y + S);
