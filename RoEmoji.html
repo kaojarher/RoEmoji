@@ -302,6 +302,7 @@
     <div class="inv-slot"><span>💎 結晶:</span><span id="inv-loot"  style="color:#7d3c98;">結晶 x0</span></div>
     <div class="inv-slot"><span>❤️ 紅水:</span><span><b id="inv-red-pot">x0</b> <button class="use-btn use-btn-red" onclick="useRedPotion()">使用</button></span></div>
     <div class="inv-slot"><span>💧 藍水:</span><span><b id="inv-blue-pot">x0</b> <button class="use-btn use-btn-blue" onclick="useBluePotion()">使用</button></span></div>
+    <div class="inv-slot"><span>📜 卷軸:</span><span><b id="inv-scroll">x0</b> <button class="use-btn" style="background:#8e44ad;" onclick="useScroll()">使用</button></span></div>
 </div>
 
 <div id="save-window" class="ro-panel">
@@ -373,6 +374,7 @@
                 <div class="inv-slot"><span>💎</span><span id="inv-loot-m" style="color:#7d3c98;">x0</span></div>
                 <div class="inv-slot"><span>❤️</span><span><b id="inv-red-m">x0</b> <button class="use-btn use-btn-red" onclick="useRedPotion()">用</button></span></div>
                 <div class="inv-slot"><span>💧</span><span><b id="inv-blue-m">x0</b> <button class="use-btn use-btn-blue" onclick="useBluePotion()">用</button></span></div>
+                <div class="inv-slot"><span>📜</span><span><b id="inv-scroll-m">x0</b> <button class="use-btn" style="background:#8e44ad;" onclick="useScroll()">傳</button></span></div>
             </div>
             <div class="ro-panel" style="position:relative;">
                 <div class="ro-panel-title">💾 儲存</div>
@@ -767,7 +769,8 @@
         armorPants:   "👖",   // 層1b 褲子（預設👖，有坐騎時隱藏）
         armorEmoji:   "",      // 購買防具後的上衣替換 emoji
         helmetEmoji:  "",
-        mountEmoji:   "",      // 坐騎（有時隱藏褲子）
+        mountEmoji:   "",      // 坐騎
+        scrollCount:  0,         // 瞬移卷軸（有時隱藏褲子）
         mountSpeedBonus: 0,    // 坐騎移速加成
         get attackCooldown() { return Math.max(250, 1000 - (this.agi * 45)); }
     };
@@ -781,21 +784,58 @@
         const scene = this;
         scene.physics.world.setBounds(0, 0, 2000, 2000);
 
-        // 1. 純綠色大地底層
-        scene.add.rectangle(1000, 1000, 2000, 2000, 0x3e7e43);
+        // 1. 世界地圖 5000×5000，分區地形
+        const WORLD = 5000;
+        scene.physics.world.setBounds(0, 0, WORLD, WORLD);
 
-        // --- 2. 劃分城鎮安全區 (左上角) ---
-        const townZone = scene.add.graphics();
-        townZone.fillStyle(0x7f8c8d, 0.3); // 鋪設城鎮輕微地磚感
-        townZone.fillRect(0, 0, 400, 400);
-        scene.add.text(20, 20, "⛲ 普隆德拉邊境小鎮 (安全區)", { font: "bold 16px Arial", fill: "#fff", backgroundColor: "rgba(0,0,0,0.5)", padding: 4 });
+        // 底層草地
+        scene.add.rectangle(WORLD/2, WORLD/2, WORLD, WORLD, 0x3e7e43);
 
-        // 散落一些野外樹木 (避開城鎮)
-        for(let i=0; i<15; i++) {
-            let tx = Phaser.Math.Between(450, 1950);
-            let ty = Phaser.Math.Between(450, 1950);
-            scene.add.text(tx, ty, "🌳", { font: "30px Arial" }).setAlpha(0.6);
-        }
+        // ── 分區色塊 ──
+        const g = scene.add.graphics();
+        // 城鎮（左上）淺灰
+        g.fillStyle(0x95a5a6, 0.35); g.fillRect(0, 0, 480, 480);
+        // 初級森林（右上）深綠
+        g.fillStyle(0x1e8449, 0.45); g.fillRect(500, 0, 1500, 1500);
+        // 中級沼澤（左中）暗藍綠
+        g.fillStyle(0x1a5276, 0.45); g.fillRect(0, 500, 1500, 2000);
+        // 中級沙漠（右中）沙黃
+        g.fillStyle(0xd4ac0d, 0.30); g.fillRect(2000, 500, 1500, 2000);
+        // 高級火山（下中）暗紅
+        g.fillStyle(0x7b241c, 0.40); g.fillRect(500, 2500, 2500, 2000);
+        // BOSS 冰川（右下角）深藍
+        g.fillStyle(0x1a252f, 0.55); g.fillRect(3500, 3500, 1500, 1500);
+
+        // ── 區域標示文字 ──
+        const zoneLabels = [
+            { x: 20,   y: 20,   t: "⛲ 普隆德拉小鎮（安全區）", c: "#fff" },
+            { x: 520,  y: 25,   t: "🌲 初級森林（Lv.1-5）",     c: "#a9dfbf" },
+            { x: 25,   y: 510,  t: "🌊 中級沼澤（Lv.6-12）",    c: "#7fb3d3" },
+            { x: 2020, y: 510,  t: "🏜️ 中級沙漠（Lv.8-15）",    c: "#f9e79f" },
+            { x: 520,  y: 2520, t: "🌋 高級火山（Lv.15-25）",   c: "#f1948a" },
+            { x: 3520, y: 3520, t: "❄️ BOSS 冰川（Lv.25+）",    c: "#aed6f1" },
+        ];
+        zoneLabels.forEach(z =>
+            scene.add.text(z.x, z.y, z.t, { font: "bold 18px Arial", fill: z.c,
+                backgroundColor: "rgba(0,0,0,0.55)", padding: { x:6, y:3 } })
+        );
+
+        // ── 地形裝飾物（各區散佈） ──
+        const decoSets = [
+            { zone:[500,2000,0,1500],   emojis:["🌲","🌳","🍄","🌿"], n:40 },
+            { zone:[0,1500,500,2500],   emojis:["🌊","🪨","💧","🐸"], n:30 },
+            { zone:[2000,3500,500,2500],emojis:["🏜️","🌵","🪨","☀️"], n:30 },
+            { zone:[500,3000,2500,4500],emojis:["🌋","🔥","🪨","💀"], n:35 },
+            { zone:[3500,5000,3500,5000],emojis:["❄️","🧊","☃️","🌨️"],n:25 },
+        ];
+        decoSets.forEach(({zone, emojis, n}) => {
+            for (let i = 0; i < n; i++) {
+                const dx = Phaser.Math.Between(zone[0], zone[1]);
+                const dy = Phaser.Math.Between(zone[2], zone[3]);
+                const em = emojis[Phaser.Math.Between(0, emojis.length-1)];
+                scene.add.text(dx, dy, em, { font: "28px Arial" }).setAlpha(0.65);
+            }
+        });
 
         // --- 3. 配置 NPC 買賣商家（設置物理靜態體，具備點擊與鄰近提示） ---
         npcs = scene.physics.add.staticGroup();
@@ -855,15 +895,16 @@
         player = scene.add.container(200, 300, [spriteMount, spriteBody, spritePants, spriteCloth, spriteAccs, spriteHelmet]);
         scene.physics.world.enable(player);
         player.body.setCollideWorldBounds(true).setSize(45, 45);
+        player.body.setMaxVelocity(1200, 1200);
 
         // 阻擋玩家與 NPC 重疊穿透
         scene.physics.add.collider(player, npcs, handleNpcInteract, null, this);
 
-        scene.cameras.main.setBounds(0, 0, 2000, 2000).startFollow(player, true, 0.1, 0.1);
+        scene.cameras.main.setBounds(0, 0, 5000, 5000).startFollow(player, true, 0.1, 0.1);
 
         // 生成野外怪物
         monsters = scene.physics.add.group();
-        for(let i=0; i<15; i++) spawnMonster(scene);
+        for(let i=0; i<60; i++) spawnMonster(scene);
 
         cursors = scene.input.keyboard.createCursorKeys();
         scene.input.on('pointerdown', (pointer) => {
@@ -895,7 +936,7 @@
         // 視窗 resize 時同步相機
         scene.scale.on('resize', (gs) => {
             scene.cameras.main.setSize(gs.width, gs.height);
-            scene.cameras.main.setBounds(0, 0, 2000, 2000);
+            scene.cameras.main.setBounds(0, 0, 5000, 5000);
         });
     }
 
@@ -1195,6 +1236,14 @@
                     </div>
                     <button class="shop-btn shop-btn-buy" onclick="buyItem('shield_charm',900)">900z</button>
                 </div>
+                <div class="shop-section-title">📜 瞬移道具</div>
+                <div class="shop-row row-magic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">📜 城鎮瞬移卷軸 <span class="grade grade-magic">魔法</span></div>
+                        <div class="shop-item-desc">立即傳送回普隆德拉小鎮</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('scroll_town',100)">100z</button>
+                </div>
                 <div class="shop-section-title">💰 典當回收</div>
                 <div class="shop-row row-normal">
                     <div class="shop-item-info">
@@ -1338,6 +1387,9 @@
             playerData.bluePotions++;
             playerData._bluePotHeal = 80;
             logChat("商店", "🛍️ 購買了 1 瓶 [星辰魔水]，SP 回復量提升！");
+        } else if(itemId === 'scroll_town') {
+            playerData.scrollCount = (playerData.scrollCount || 0) + 3;
+            logChat("商店", "📜 購入 3 張城鎮瞬移卷軸！");
         } else if(itemId === 'elixir') {
             playerData.hp = playerData.maxHp;
             playerData.sp = playerData.maxSp;
@@ -1407,7 +1459,7 @@
 
             if (monster.hp > 0) {
                 ZeldaAudio.sfxAttack();
-                const rawDmg = Phaser.Math.Between(4, 8);
+                const rawDmg = Phaser.Math.Between(monster.atk || 4, (monster.atk || 4) + 6);
                 const def = (playerData.bonusDef || 0) + Math.floor(playerData.vit / 3);
                 const monsterDmg = Math.max(1, rawDmg - def);
                 ZeldaAudio.sfxHurt();
@@ -1428,7 +1480,11 @@
                 logChat("系統", `擊敗了 ${monster.monsterName}！`);
                 playerData.exp += 35;
                 ZeldaAudio.sfxTreasure();
-                playerData.lootCount++; // 獲得結晶
+                const lootGain = monster.lootDrop || 1;
+                playerData.lootCount += lootGain;
+                const expGain = monster.exp || 8;
+                playerData.exp += expGain;
+                showPopText(activeScene, monster.x, monster.y - 40, `+${expGain}EXP`, "#f1c40f");
 
                 if(playerData.exp >= playerData.nextExp) {
                     playerData.level++;
@@ -1522,6 +1578,8 @@
         _setEl('eq-mount',   playerData.mountText   || '（無坐騎）');
         _setEl('stat-pts',   playerData.points);
         _setEl('stat-def',   (playerData.bonusDef || 0) + Math.floor(playerData.vit / 3));
+        _setEl('inv-scroll',  `x${playerData.scrollCount || 0}`);
+        _setEl('inv-scroll-m',`x${playerData.scrollCount || 0}`);
         _setEl('p-str',      playerData.str);
         _setEl('p-agi',      playerData.agi);
         _setEl('p-vit',      playerData.vit);
@@ -1544,17 +1602,87 @@
         updateSprite();
     }
 
-    function spawnMonster(scene) {
-        const t = [{e:"🦊", n:"波利"}, {e:"👻", n:"小惡魔"}, {e:"🐛", n:"盜蟲"}][Phaser.Math.Between(0, 2)];
-        const mText = scene.add.text(-15, -15, t.e, { font: "36px Arial" });
-        const mHp = scene.add.text(-20, -32, `HP: 50`, { font: "11px Arial", fill: "#ff4757" });
-        
-        // 確保怪物不會出生在安全城鎮區內 (x > 450)
-        const mContainer = scene.add.container(Phaser.Math.Between(450, 1900), Phaser.Math.Between(450, 1900), [mText, mHp]);
-        scene.physics.world.enable(mContainer);
-        mContainer.hp = 50; mContainer.monsterName = t.n; mContainer.hpText = mHp;
+    // ── 怪物完整資料表（依區域分6級，大小＝威脅指標） ──
+    const MONSTER_ZONES = [
+        // 初級森林（x:500-2000, y:0-1500）Lv.1-5
+        { zone:[500,2000,50,1500], list:[
+            { e:"🐛", n:"盜蟲",   hp:40,  atk:4,  def:0, exp:8,  loot:1, font:"22px Arial", col:"#a9dfbf" },
+            { e:"🦋", n:"蝴蝶妖", hp:35,  atk:5,  def:0, exp:10, loot:1, font:"22px Arial", col:"#d7bde2" },
+            { e:"🐝", n:"大黃蜂", hp:55,  atk:7,  def:1, exp:15, loot:1, font:"26px Arial", col:"#f9e79f" },
+            { e:"🦎", n:"蜥蜴人", hp:70,  atk:9,  def:2, exp:20, loot:2, font:"28px Arial", col:"#a9cce3" },
+        ]},
+        // 中級沼澤（x:0-1500, y:500-2500）Lv.6-12
+        { zone:[50,1500,500,2500], list:[
+            { e:"🐸", n:"毒蛙妖", hp:120, atk:14, def:3, exp:35, loot:2, font:"28px Arial", col:"#82e0aa" },
+            { e:"🐊", n:"鱷魚獸", hp:160, atk:18, def:5, exp:50, loot:3, font:"32px Arial", col:"#1abc9c" },
+            { e:"🦑", n:"沼澤魔", hp:200, atk:22, def:6, exp:65, loot:3, font:"36px Arial", col:"#5dade2" },
+            { e:"🧟", n:"沼屍",   hp:180, atk:20, def:8, exp:60, loot:4, font:"34px Arial", col:"#7d6608" },
+        ]},
+        // 中級沙漠（x:2000-3500, y:500-2500）Lv.8-15
+        { zone:[2000,3500,500,2500], list:[
+            { e:"🦂", n:"沙漠蠍", hp:150, atk:16, def:4, exp:45, loot:2, font:"30px Arial", col:"#e59866" },
+            { e:"🐪", n:"沙暴駝", hp:200, atk:20, def:7, exp:60, loot:3, font:"34px Arial", col:"#d4ac0d" },
+            { e:"🏺", n:"木乃伊", hp:220, atk:24, def:9, exp:70, loot:4, font:"36px Arial", col:"#f0b27a" },
+            { e:"🦁", n:"沙漠獅", hp:260, atk:28, def:10,exp:85, loot:4, font:"40px Arial", col:"#f39c12" },
+        ]},
+        // 高級火山（x:500-3000, y:2500-4500）Lv.15-25
+        { zone:[500,3000,2500,4500], list:[
+            { e:"🔥", n:"火焰妖", hp:320, atk:35, def:12,exp:100,loot:5, font:"36px Arial", col:"#e74c3c" },
+            { e:"🐲", n:"熔岩龍", hp:450, atk:48, def:16,exp:140,loot:6, font:"44px Arial", col:"#c0392b" },
+            { e:"🦖", n:"暴龍獸", hp:500, atk:55, def:18,exp:160,loot:7, font:"48px Arial", col:"#922b21" },
+            { e:"💀", n:"骷髏王", hp:420, atk:50, def:20,exp:150,loot:8, font:"44px Arial", col:"#784212" },
+        ]},
+        // BOSS冰川（x:3500-5000, y:3500-5000）Lv.25+
+        { zone:[3500,4950,3500,4950], list:[
+            { e:"🧊", n:"冰晶巨人",hp:800, atk:70, def:28,exp:300,loot:12,font:"52px Arial", col:"#aed6f1" },
+            { e:"🐋", n:"冰海鯨神",hp:1000,atk:85, def:35,exp:400,loot:15,font:"56px Arial", col:"#85c1e9" },
+            { e:"☃️", n:"暴雪雪人",hp:700, atk:65, def:30,exp:280,loot:10,font:"50px Arial", col:"#d6eaf8" },
+            { e:"🦈", n:"深淵鯊皇",hp:1200,atk:100,def:40,exp:500,loot:20,font:"60px Arial", col:"#1a5276" },
+        ]},
+    ];
 
-        scene.tweens.add({ targets: mText, scaleY: 0.88, scaleX: 1.05, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    function spawnMonster(scene) {
+        // 隨機選一個區域（依權重：初級最多，BOSS最少）
+        const weights = [35, 25, 20, 15, 5];
+        let r = Phaser.Math.Between(1, 100), cumul = 0, zoneIdx = 0;
+        for (let i = 0; i < weights.length; i++) {
+            cumul += weights[i];
+            if (r <= cumul) { zoneIdx = i; break; }
+        }
+        const zone = MONSTER_ZONES[zoneIdx];
+        const t = zone.list[Phaser.Math.Between(0, zone.list.length - 1)];
+        const [x1,x2,y1,y2] = zone.zone;
+        const mx = Phaser.Math.Between(x1, x2);
+        const my = Phaser.Math.Between(y1, y2);
+
+        // emoji 文字（字體大小反映強度）
+        const mText = scene.add.text(-20, -20, t.e, { font: t.font });
+        // HP 文字（帶顏色標示）
+        const fontSize = parseInt(t.font);
+        const mHp  = scene.add.text(-22, -fontSize - 8,
+            `HP:${t.hp}`, { font: "10px Arial", fill: t.col });
+        // 等級標示
+        const mName = scene.add.text(-22, fontSize + 4,
+            t.n, { font: "10px Arial", fill: t.col, backgroundColor: "rgba(0,0,0,0.5)", padding:{x:2,y:1} });
+
+        const mContainer = scene.add.container(mx, my, [mText, mHp, mName]);
+        scene.physics.world.enable(mContainer);
+        mContainer.body.setCollideWorldBounds(true);
+        mContainer.hp     = t.hp;
+        mContainer.maxHp  = t.hp;
+        mContainer.atk    = t.atk;
+        mContainer.def    = t.def;
+        mContainer.exp    = t.exp;
+        mContainer.lootDrop = t.loot;
+        mContainer.monsterName = t.n;
+        mContainer.hpText = mHp;
+        mContainer._emoji = t.e;
+        mContainer._col   = t.col;
+
+        // 呼吸動畫（BOSS 縮放更誇張）
+        const scale = fontSize >= 50 ? 0.12 : 0.07;
+        scene.tweens.add({ targets: mText, scaleY: 1 - scale, scaleX: 1 + scale*0.5,
+            duration: 400 + fontSize * 5, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         monsters.add(mContainer);
     }
 
@@ -1572,6 +1700,7 @@
     };
     const TOWN_CENTER = { x: 220, y: 250 };
     const FIELD_MIN   = 500;   // 野外最小座標
+    const FIELD_MAX   = 4800;  // 野外最大座標
 
     // AI 角色裝備成長表（依 tier 0-4 對應商店品項）
     const AI_WEAPON_TIERS = [
@@ -1741,8 +1870,8 @@
             const spd = 90 + d.mountSpd;
 
             // ── 狀態 1：出外狩獵 ──
-            const fieldX = Phaser.Math.Between(FIELD_MIN, 1800);
-            const fieldY = Phaser.Math.Between(FIELD_MIN, 1800);
+            const fieldX = Phaser.Math.Between(FIELD_MIN, FIELD_MAX);
+            const fieldY = Phaser.Math.Between(FIELD_MIN, FIELD_MAX);
             aiSay(ai, "⚔️ 出去打怪了！");
             await aiMoveTo(scene, ai, fieldX, fieldY, spd);
 
@@ -1897,6 +2026,20 @@
         scene.tweens.add({ targets: t, y: y - 55, alpha: 0, duration: 550, onComplete: () => t.destroy() });
     }
 
+    function useScroll() {
+        if ((playerData.scrollCount || 0) <= 0) {
+            logChat("系統", "❌ 沒有瞬移卷軸了！去道具商人那裡買。");
+            ZeldaAudio.sfxError();
+            return;
+        }
+        playerData.scrollCount--;
+        // 傳送玩家回城鎮中心
+        player.setPosition(220, 300);
+        ZeldaAudio.sfxTreasure();
+        logChat("系統", "📜 瞬移卷軸！已傳送回普隆德拉小鎮。");
+        updateUI();
+    }
+
     function sendPlayerChat(e) {
         if(e.key === 'Enter') {
             const input = document.getElementById('chat-input');
@@ -1987,6 +2130,7 @@
             redPotions: playerData.redPotions || 0,
             redPotHeal: playerData._redPotHeal || 80,
             shieldCharm: playerData.shieldCharm || 0,
+            scrollCount: playerData.scrollCount || 0,
             zeny: playerData.zeny,
             weaponText: playerData.weaponText,
             savedAt: new Date().toISOString()
@@ -2025,6 +2169,7 @@
             playerData.redPotions = data.redPotions || 0;
             playerData._redPotHeal = data.redPotHeal || 80;
             playerData.shieldCharm = data.shieldCharm || 0;
+            playerData.scrollCount = data.scrollCount || 0;
             playerData.zeny = data.zeny;
             playerData.weaponText = data.weaponText || "🪵 幼木棒";
             
