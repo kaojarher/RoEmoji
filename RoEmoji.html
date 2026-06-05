@@ -185,7 +185,7 @@
         .btn-sp-pot { background: radial-gradient(circle at 35% 35%, #2980b9, #1a6fa8); }
 
         /* ===== 音效提示 ===== */
-        #sfx-indicator { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: #aed6f1; border: 1px solid #5b7da3; border-radius: 20px; padding: 3px 12px; font-size: 11px; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        #sfx-indicator { position: fixed; top: 8px; right: 10px; left: auto; transform: none; background: rgba(0,0,0,0.55); color: #aed6f1; border: 1px solid #5b7da3; border-radius: 20px; padding: 3px 10px; font-size: 10px; opacity: 0.8; pointer-events: all; cursor: pointer; transition: opacity 0.3s; z-index: 999; }
 
         /* ===================================
            📱 手機介面 (≤ 600px)  上半地圖 / 下半 UI
@@ -265,7 +265,7 @@
 
 <div id="game-container"></div>
 
-<div id="sfx-indicator">🎵</div>
+<div id="sfx-indicator" onclick="toggleAudioMute()" title="點擊靜音/開啟" style="cursor:pointer;">🎵 音效開</div>
 
 <div id="status-window" class="ro-panel">
     <div id="job-title">🧙‍♂️ 冒險者 (Lv.1)</div>
@@ -416,6 +416,250 @@
     let tokenClient;
     let accessToken = null;
 
+
+    // ════════════════════════════════════════════════════════════
+    // 🎵 ZELDA 風格音效引擎（Web Audio API 純合成，零外部資源）
+    // ════════════════════════════════════════════════════════════
+    const ZeldaAudio = (() => {
+        let ctx = null;
+        let bgmNodes = [];        // 背景音樂節點
+        let bgmRunning = false;
+        let masterGain = null;
+        let bgmGain = null;
+        let sfxGain = null;
+        let muted = false;
+
+        function getCtx() {
+            if (!ctx) {
+                ctx = new (window.AudioContext || window.webkitAudioContext)();
+                masterGain = ctx.createGain(); masterGain.gain.value = 0.7;
+                bgmGain    = ctx.createGain(); bgmGain.gain.value    = 0.35;
+                sfxGain    = ctx.createGain(); sfxGain.gain.value    = 0.85;
+                bgmGain.connect(masterGain);
+                sfxGain.connect(masterGain);
+                masterGain.connect(ctx.destination);
+            }
+            if (ctx.state === 'suspended') ctx.resume();
+            return ctx;
+        }
+
+        // 基本音符播放（type: sine/triangle/square/sawtooth）
+        function note(freq, start, dur, vol=0.5, type='triangle', gainNode=null) {
+            const c = getCtx();
+            const g = gainNode || sfxGain;
+            const osc = c.createOscillator();
+            const env = c.createGain();
+            osc.type = type; osc.frequency.value = freq;
+            env.gain.setValueAtTime(0, c.currentTime + start);
+            env.gain.linearRampToValueAtTime(vol, c.currentTime + start + 0.01);
+            env.gain.exponentialRampToValueAtTime(0.001, c.currentTime + start + dur);
+            osc.connect(env); env.connect(g);
+            osc.start(c.currentTime + start);
+            osc.stop(c.currentTime + start + dur + 0.05);
+        }
+
+        // 打擊音（鼓/打擊）
+        function drum(freq, start, dur, vol=0.4) {
+            const c = getCtx();
+            const osc = c.createOscillator();
+            const env = c.createGain();
+            osc.type = 'sine'; 
+            osc.frequency.setValueAtTime(freq, c.currentTime + start);
+            osc.frequency.exponentialRampToValueAtTime(freq * 0.3, c.currentTime + start + dur);
+            env.gain.setValueAtTime(vol, c.currentTime + start);
+            env.gain.exponentialRampToValueAtTime(0.001, c.currentTime + start + dur);
+            osc.connect(env); env.connect(sfxGain);
+            osc.start(c.currentTime + start);
+            osc.stop(c.currentTime + start + dur + 0.05);
+        }
+
+        // ── 音效定義 ──────────────────────────────────────────
+
+        // 寶箱開啟：薩爾達經典 Do-Mi-Sol-Do 上升四音
+        function sfxTreasure() {
+            const s = [261.6, 329.6, 392, 523.2];
+            s.forEach((f,i) => note(f, i*0.18, 0.4, 0.6, 'triangle'));
+        }
+
+        // 攻擊/劍鳴：金屬切劃聲
+        function sfxAttack() {
+            const c = getCtx();
+            const buf = c.createBuffer(1, c.sampleRate * 0.12, c.sampleRate);
+            const d = buf.getChannelData(0);
+            for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/d.length, 2);
+            const src = c.createBufferSource();
+            const filt = c.createBiquadFilter();
+            filt.type = 'bandpass'; filt.frequency.value = 2800; filt.Q.value = 0.8;
+            const env = c.createGain(); env.gain.setValueAtTime(0.55, c.currentTime); env.gain.exponentialRampToValueAtTime(0.001, c.currentTime+0.12);
+            src.buffer = buf; src.connect(filt); filt.connect(env); env.connect(sfxGain);
+            src.start(); src.stop(c.currentTime + 0.13);
+            // 金屬共鳴音
+            note(880, 0, 0.08, 0.25, 'sawtooth');
+            note(1320, 0.02, 0.06, 0.15, 'sawtooth');
+        }
+
+        // 狂擊技能：有力衝擊聲
+        function sfxBash() {
+            drum(180, 0, 0.15, 0.6);
+            note(220, 0, 0.1, 0.35, 'sawtooth');
+            note(440, 0.05, 0.08, 0.2, 'square');
+        }
+
+        // 受傷：低沉打擊
+        function sfxHurt() {
+            drum(120, 0, 0.2, 0.5);
+            note(180, 0, 0.15, 0.3, 'square');
+        }
+
+        // 升級：薩爾達風格神聖上升琶音
+        function sfxLevelUp() {
+            // 三度音疊加上升
+            const seq = [261.6,329.6,392,523.2,659.2,783.9,1046.5];
+            seq.forEach((f,i) => {
+                note(f,          i*0.12, 0.5, 0.5, 'triangle');
+                note(f*1.25,     i*0.12, 0.5, 0.2, 'sine');    // 加三度和聲
+            });
+            // 結尾光芒和弦
+            [523.2,659.2,783.9,1046.5].forEach((f,i) => note(f, 0.85, 0.8, 0.35, 'sine'));
+        }
+
+        // 購買成功：金幣音效
+        function sfxBuy() {
+            note(523.2, 0,    0.1, 0.4, 'triangle');
+            note(659.2, 0.1,  0.1, 0.4, 'triangle');
+            note(783.9, 0.2,  0.15,0.45,'triangle');
+        }
+
+        // 變賣：金幣落入聲
+        function sfxSell() {
+            note(783.9, 0,   0.08, 0.4, 'triangle');
+            note(659.2, 0.08,0.08, 0.4, 'triangle');
+            note(523.2, 0.16,0.12, 0.45,'triangle');
+            note(392,   0.28,0.18, 0.3, 'triangle');
+        }
+
+        // 使用藥水：回復治癒聲
+        function sfxHeal() {
+            note(523.2, 0,    0.12, 0.3, 'sine');
+            note(659.2, 0.1,  0.12, 0.35,'sine');
+            note(783.9, 0.2,  0.12, 0.4, 'sine');
+            note(1046.5,0.32, 0.25, 0.3, 'sine');
+        }
+
+        // 死亡：低沉下降音
+        function sfxDead() {
+            const s = [392, 329.6, 261.6, 196];
+            s.forEach((f,i) => note(f, i*0.22, 0.4, 0.5, 'triangle'));
+            note(130.8, 0.9, 0.8, 0.4, 'sine');
+        }
+
+        // NPC 互動：輕快提示音
+        function sfxNpc() {
+            note(659.2, 0,    0.08, 0.35, 'triangle');
+            note(783.9, 0.1,  0.08, 0.35, 'triangle');
+        }
+
+        // 騎上坐騎：嘹亮號角
+        function sfxMount() {
+            note(392,   0,    0.15, 0.5, 'sawtooth');
+            note(523.2, 0.15, 0.15, 0.5, 'sawtooth');
+            note(659.2, 0.3,  0.15, 0.5, 'sawtooth');
+            note(783.9, 0.45, 0.3,  0.5, 'sawtooth');
+        }
+
+        // 存檔：短小確認音
+        function sfxSave() {
+            note(523.2, 0,   0.1, 0.4, 'triangle');
+            note(659.2, 0.1, 0.1, 0.4, 'triangle');
+            note(1046.5,0.2, 0.3, 0.45,'triangle');
+        }
+
+        // 錯誤：低頻拒絕音
+        function sfxError() {
+            note(200, 0,    0.15, 0.4, 'square');
+            note(160, 0.15, 0.2,  0.4, 'square');
+        }
+
+        // ── 背景音樂（薩爾達海利亞風格，環境氛圍） ───────────
+        // 主旋律音符序列（C大調，田園風）
+        const BGM_MELODY = [
+            // 小節 1：主題開頭
+            {f:392,  d:0.4}, {f:440,  d:0.2}, {f:494,  d:0.2},
+            {f:523,  d:0.6}, {f:494,  d:0.2}, {f:440,  d:0.4},
+            // 小節 2
+            {f:392,  d:0.4}, {f:349,  d:0.4}, {f:330,  d:0.4}, {f:294,  d:0.4},
+            // 小節 3：上升
+            {f:330,  d:0.3}, {f:370,  d:0.3}, {f:392,  d:0.3}, {f:440,  d:0.3}, {f:494,  d:0.4},
+            // 小節 4：收尾回落
+            {f:523,  d:0.4}, {f:494,  d:0.2}, {f:440,  d:0.2}, {f:392,  d:0.8},
+        ];
+        // 和弦低音（五度音程）
+        const BGM_BASS = [
+            {f:130.8,d:1.6}, {f:146.8,d:1.6},
+            {f:130.8,d:1.6}, {f:110,  d:1.6},
+            {f:123.5,d:2.4},
+            {f:130.8,d:1.6},
+        ];
+
+        function startBGM() {
+            if (bgmRunning || muted) return;
+            bgmRunning = true;
+            const c = getCtx();
+            const totalMelodyDur = BGM_MELODY.reduce((s,n) => s+n.d, 0);
+            const totalBassDur   = BGM_BASS.reduce((s,n)   => s+n.d, 0);
+
+            let melodyLoop, bassLoop;
+
+            function scheduleMelody(startT) {
+                let t = startT;
+                BGM_MELODY.forEach(({f, d}) => {
+                    note(f, t - c.currentTime, d * 0.85, 0.22, 'triangle', bgmGain);
+                    t += d;
+                });
+                melodyLoop = setTimeout(() => scheduleMelody(t), (t - c.currentTime - 0.5) * 1000);
+            }
+
+            function scheduleBass(startT) {
+                let t = startT;
+                BGM_BASS.forEach(({f, d}) => {
+                    note(f, t - c.currentTime, d * 0.7, 0.14, 'sine', bgmGain);
+                    t += d;
+                });
+                bassLoop = setTimeout(() => scheduleBass(t), (t - c.currentTime - 0.5) * 1000);
+            }
+
+            // 輕柔鈴鐺裝飾音（每隔幾秒隨機閃爍）
+            function scheduleChime() {
+                if (!bgmRunning) return;
+                const chimeFreqs = [1046.5, 1174.7, 1318.5, 1567.9, 2093];
+                const f = chimeFreqs[Math.floor(Math.random() * chimeFreqs.length)];
+                note(f, 0, 0.6, 0.08, 'sine', bgmGain);
+                setTimeout(scheduleChime, 2500 + Math.random() * 3500);
+            }
+
+            scheduleMelody(c.currentTime + 0.3);
+            scheduleBass(c.currentTime + 0.3);
+            setTimeout(scheduleChime, 3000);
+        }
+
+        function stopBGM() {
+            bgmRunning = false;
+        }
+
+        function toggleMute() {
+            muted = !muted;
+            if (masterGain) masterGain.gain.value = muted ? 0 : 0.7;
+            return muted;
+        }
+
+        return {
+            sfxTreasure, sfxAttack, sfxBash, sfxHurt, sfxLevelUp,
+            sfxBuy, sfxSell, sfxHeal, sfxDead, sfxNpc, sfxMount,
+            sfxSave, sfxError, startBGM, stopBGM, toggleMute,
+            get muted() { return muted; }
+        };
+    })();
+    // ════════════════════════════════════════════════════════════
     let game;
 
     function launchPhaser() {
@@ -689,6 +933,7 @@
         player.body.setVelocity(0);
         targetPointer = null;
         const type = npcEntity.getData('type');
+        ZeldaAudio.sfxNpc();
         openShopUI(type);
     }
 
@@ -1042,6 +1287,7 @@
 
     function buyItem(itemId, cost) {
         if(playerData.zeny < cost) {
+            ZeldaAudio.sfxError();
             logChat("商店", "❌ 你的 Zeny 不夠，商人搖了搖頭！");
             return;
         }
@@ -1053,6 +1299,7 @@
             playerData.weaponText  = w.text;
             playerData.weaponEmoji = w.emoji;
             updateSprite();
+            ZeldaAudio.sfxBuy();
             logChat("商店", `🛍️ 裝備了 [${w.name}]！ATK +${w.atk}`);
         } else if(ARMOR_TABLE[itemId]) {
             const a = ARMOR_TABLE[itemId];
@@ -1062,6 +1309,7 @@
             playerData.helmetEmoji = a.helmet;  // 層3 頭盔
             playerData.helmetText  = a.name + " 頭盔";
             updateSprite();
+            ZeldaAudio.sfxBuy();
             logChat("商店", `🛍️ 裝備了 [${a.name}]！DEF +${a.def}`);
         } else if(MOUNT_TABLE[itemId]) {
             const m = MOUNT_TABLE[itemId];
@@ -1069,6 +1317,7 @@
             playerData.mountText       = m.text;
             playerData.mountSpeedBonus = m.spd;
             updateSprite();
+            ZeldaAudio.sfxMount();
             logChat("商店", `🐾 騎上了 [${m.name}]！移動速度 +${m.spd}！`);
         } else if(itemId === 'red_pot_s') {
             playerData.redPotions = (playerData.redPotions || 0) + 1;
@@ -1105,6 +1354,7 @@
             logChat("商店", "❌ 你身上沒有任何 [傑勒比結晶] 可以變賣。");
             return;
         }
+        ZeldaAudio.sfxSell();
         const gain = playerData.lootCount * 15;
         playerData.zeny += gain;
         logChat("商店", `💰 變賣了 ${playerData.lootCount} 個結晶，獲得了 ${gain} Zeny！`);
@@ -1124,6 +1374,7 @@
         }
         playerData.redPotions--;
         const heal = playerData._redPotHeal || 80;
+        ZeldaAudio.sfxHeal();
         playerData.hp = Math.min(playerData.maxHp, playerData.hp + heal);
         logChat("背包", `❤️ 使用了紅色藥水，恢復了 ${heal} 點 HP！`);
         updateUI();
@@ -1139,6 +1390,7 @@
             return;
         }
         playerData.bluePotions--;
+        ZeldaAudio.sfxHeal();
         playerData.sp = Math.min(playerData.maxSp, playerData.sp + 25);
         logChat("背包", "🔹 咕嚕...使用了藍色藥水，恢復了 25 點 SP！");
         updateUI();
@@ -1154,9 +1406,11 @@
             showPopText(scene, monster.x, monster.y - 20, dmg, "#f1c40f");
 
             if (monster.hp > 0) {
+                ZeldaAudio.sfxAttack();
                 const rawDmg = Phaser.Math.Between(4, 8);
                 const def = (playerData.bonusDef || 0) + Math.floor(playerData.vit / 3);
                 const monsterDmg = Math.max(1, rawDmg - def);
+                ZeldaAudio.sfxHurt();
                 playerData.hp = Math.max(0, playerData.hp - monsterDmg);
                 updateUI();
                 showPopText(scene, player.x, player.y - 20, monsterDmg, "#e74c3c");
@@ -1173,6 +1427,7 @@
                 monster.destroy();
                 logChat("系統", `擊敗了 ${monster.monsterName}！`);
                 playerData.exp += 35;
+                ZeldaAudio.sfxTreasure();
                 playerData.lootCount++; // 獲得結晶
 
                 if(playerData.exp >= playerData.nextExp) {
@@ -1186,6 +1441,7 @@
                     playerData.baseAtk += 2;
                     playerData.hp = playerData.maxHp;
                     playerData.sp = playerData.maxSp;
+                    ZeldaAudio.sfxLevelUp();
                     logChat("系統", `🎉 Level Up！晉升至 Lv.${playerData.level}！HP & SP 全滿！`);
                 }
                 updateUI();
@@ -1195,6 +1451,7 @@
     }
 
     function triggerBashSkill() {
+        ZeldaAudio.sfxBash();
         const scene = game.scene.scenes[0];
         if (playerData.sp < 15) { logChat("特技", "❌ SP 不足，無法施展狂擊！"); return; }
 
@@ -1386,6 +1643,21 @@
         if (logM) { logM.innerHTML += line; logM.scrollTop = logM.scrollHeight; }
     }
 
+    // 首次互動時啟動 BGM（瀏覽器需要使用者手勢）
+    function toggleAudioMute() {
+        const muted = ZeldaAudio.toggleMute();
+        const el = document.getElementById('sfx-indicator');
+        if (el) { el.textContent = muted ? '🔇 靜音' : '🎵 音效開'; el.style.opacity='1'; setTimeout(()=>el.style.opacity='0',2000); }
+    }
+
+    function _startAudioOnFirstInteraction() {
+        ZeldaAudio.startBGM();
+        document.removeEventListener('touchstart', _startAudioOnFirstInteraction);
+        document.removeEventListener('mousedown',  _startAudioOnFirstInteraction);
+    }
+    document.addEventListener('touchstart', _startAudioOnFirstInteraction, { once: true });
+    document.addEventListener('mousedown',  _startAudioOnFirstInteraction, { once: true });
+
     function setupJoystick() {
         const joystick = document.getElementById('joystick');
         const stick    = document.getElementById('stick');
@@ -1493,6 +1765,7 @@
 
     // --- 本地端存檔演算法 ---
     function exportLocalSave() {
+        ZeldaAudio.sfxSave();
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(generateSavePackage(), null, 2));
         const downloadAnchor = document.createElement('a');
         downloadAnchor.setAttribute("href", dataStr);
