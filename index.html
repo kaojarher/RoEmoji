@@ -1476,24 +1476,28 @@
             }
 
             if (monster.hp <= 0) {
-                monster.destroy();
-                logChat("系統", `擊敗了 ${monster.monsterName}！`);
-                playerData.exp += 35;
-                ZeldaAudio.sfxTreasure();
-                const lootGain = monster.lootDrop || 1;
-                playerData.lootCount += lootGain;
-                const expGain = monster.exp || 8;
-                playerData.exp += expGain;
-                showPopText(activeScene, monster.x, monster.y - 40, `+${expGain}EXP`, "#f1c40f");
+                // 先儲存需要的數值，再 destroy，避免存取已銷毀物件
+                const deadName  = monster.monsterName;
+                const deadX     = monster.x;
+                const deadY     = monster.y;
+                const lootGain  = monster.lootDrop || 1;
+                const expGain   = monster.exp || 8;
 
-                if(playerData.exp >= playerData.nextExp) {
+                monster.destroy();   // 銷毀後不再碰 monster 的任何屬性
+
+                ZeldaAudio.sfxTreasure();
+                logChat("系統", `⚔️ 擊敗了 ${deadName}！獲得 ${expGain} EXP、${lootGain} 顆結晶！`);
+                playerData.lootCount += lootGain;
+                playerData.exp       += expGain;
+                showPopText(scene, deadX, deadY - 40, `+${expGain}EXP`, "#f1c40f");
+
+                while (playerData.exp >= playerData.nextExp) {
+                    playerData.exp     -= playerData.nextExp;
+                    playerData.nextExp  = Math.floor(playerData.nextExp * 1.4);
                     playerData.level++;
                     playerData.points += 4;
-                    playerData.exp = 0;
-                    playerData.nextExp = Math.floor(playerData.nextExp * 1.4);
-                    // 每升一級提升 maxHp/maxSp 並滿血滿魔
-                    playerData.maxHp += 20;
-                    playerData.maxSp += 8;
+                    playerData.maxHp  += 20;
+                    playerData.maxSp  += 8;
                     playerData.baseAtk += 2;
                     playerData.hp = playerData.maxHp;
                     playerData.sp = playerData.maxSp;
@@ -1501,14 +1505,15 @@
                     logChat("系統", `🎉 Level Up！晉升至 Lv.${playerData.level}！HP & SP 全滿！`);
                 }
                 updateUI();
-                setTimeout(() => spawnMonster(scene), 3000);
+                setTimeout(() => { if (scene && scene.scene.isActive()) spawnMonster(scene); }, 3000);
             }
         }
     }
 
     function triggerBashSkill() {
         ZeldaAudio.sfxBash();
-        const scene = game.scene.scenes[0];
+        const scene = game && game.scene ? game.scene.scenes[0] : null;
+        if (!scene) return;
         if (playerData.sp < 15) { logChat("特技", "❌ SP 不足，無法施展狂擊！"); return; }
 
         let targetMonster = null;
@@ -1529,7 +1534,26 @@
         logChat("特技", `⚔️ 施展【狂擊】重創 ${targetMonster.monsterName} 造成 ${skillDmg} 點傷害！`);
 
         if (targetMonster.hp <= 0) {
-            targetMonster.destroy(); playerData.exp += 35; playerData.lootCount++;
+            const deadName2 = targetMonster.monsterName;
+            const deadX2    = targetMonster.x;
+            const deadY2    = targetMonster.y;
+            const lootGain2 = targetMonster.lootDrop || 1;
+            const expGain2  = targetMonster.exp || 8;
+            targetMonster.destroy();
+            ZeldaAudio.sfxTreasure();
+            logChat("特技", `💥 【狂擊】一擊必殺 ${deadName2}！+${expGain2}EXP`);
+            playerData.lootCount += lootGain2;
+            playerData.exp += expGain2;
+            showPopText(scene, deadX2, deadY2 - 40, `+${expGain2}EXP`, "#f1c40f");
+            while (playerData.exp >= playerData.nextExp) {
+                playerData.exp -= playerData.nextExp;
+                playerData.nextExp = Math.floor(playerData.nextExp * 1.4);
+                playerData.level++; playerData.points += 4;
+                playerData.maxHp += 20; playerData.maxSp += 8; playerData.baseAtk += 2;
+                playerData.hp = playerData.maxHp; playerData.sp = playerData.maxSp;
+                ZeldaAudio.sfxLevelUp();
+                logChat("系統", `🎉 Level Up！晉升至 Lv.${playerData.level}！`);
+            }
             updateUI();
             setTimeout(() => spawnMonster(scene), 3000);
         }
