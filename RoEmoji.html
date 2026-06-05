@@ -1558,63 +1558,338 @@
         monsters.add(mContainer);
     }
 
-    async function initPuterAIPlayers(scene) {
-        const names = ["路人天賜", "愛配利雅"];
-        for (let i = 0; i < names.length; i++) {
-            const body = scene.add.text(-20, -20, "🧍", { font: "40px Arial" });
-            const hat = scene.add.text(-25, -45, "🤠", { font: "26px Arial" });
-            const nameTag = scene.add.text(-30, 22, names[i], { font: "11px Arial", fill: "#fff", backgroundColor: "#5b7da3" });
-            const bubble = scene.add.text(-40, -75, "", { font: "12px Arial", fill: "#000", backgroundColor: "#fff", padding: 3 });
-            bubble.setAlpha(0);
+    // ════════════════════════════════════════════════════════════
+    // 🤖 AI 玩家系統：完整疊圖 + 狀態機（城鎮↔狩獵↔商店）
+    // 狀態：idle → hunting → returning → selling → buying → idle
+    // ════════════════════════════════════════════════════════════
 
-            const ai = scene.add.container(Phaser.Math.Between(100, 300), Phaser.Math.Between(250, 350), [body, hat, nameTag, bubble]);
-            scene.physics.world.enable(ai);
-            ai.name = names[i]; ai.bubble = bubble;
-            ai.targetX = Phaser.Math.Between(80, 350);
-            ai.targetY = Phaser.Math.Between(80, 370);
-            aiPlayers.push(ai);
+    // NPC 座標（給 AI 當目標）
+    const NPC_POS = {
+        weapon: { x: 175, y: 200 },
+        item:   { x: 280, y: 180 },
+        armor:  { x: 215, y: 280 },
+        mount:  { x: 340, y: 230 },
+    };
+    const TOWN_CENTER = { x: 220, y: 250 };
+    const FIELD_MIN   = 500;   // 野外最小座標
 
-            // 行走移動迴圈：每秒更新速度朝向目標點
-            scene.time.addEvent({
-                delay: 800, loop: true,
+    // AI 角色裝備成長表（依 tier 0-4 對應商店品項）
+    const AI_WEAPON_TIERS = [
+        { atk: 0,   emoji: "",    text: "（無武器）" },
+        { atk: 15,  emoji: "🗡️",  text: "🗡️鋼鐵短劍" },
+        { atk: 25,  emoji: "🔮",  text: "🔮魔晶劍" },
+        { atk: 40,  emoji: "🌀",  text: "🌀深淵魔刃" },
+        { atk: 75,  emoji: "🔥",  text: "🔥炎神破軍槍" },
+    ];
+    const AI_ARMOR_TIERS = [
+        { def: 0,   cloth: "👕", helmet: "",   text: "（無防具）" },
+        { def: 5,   cloth: "🥋", helmet: "⛑️", text: "🥋皮革輕甲" },
+        { def: 12,  cloth: "🧥", helmet: "🪖", text: "🧥鋼鐵胸甲" },
+        { def: 22,  cloth: "⚜️", helmet: "👑", text: "⚜️騎士重甲" },
+        { def: 38,  cloth: "🔰", helmet: "🎭", text: "🔰龍鱗神甲" },
+    ];
+    const AI_MOUNT_TIERS = [
+        { emoji: "",    spd: 0,   text: "（無坐騎）" },
+        { emoji: "🐮",  spd: 20,  text: "🐮牛牛坐騎" },
+        { emoji: "🐯",  spd: 50,  text: "🐯虎面坐騎" },
+        { emoji: "🦁",  spd: 70,  text: "🦁獅王戰騎" },
+        { emoji: "🐲",  spd: 100, text: "🐲神龍御駕" },
+    ];
+
+    // 建立 6 層疊圖（與玩家完全相同的結構）
+    function createAISprite(scene, x, y, name, colorTag) {
+        const L = SPRITE_LAYERS;
+        const sMount  = scene.add.text(L.mount.x,  L.mount.y,  "",    { font: L.mount.font  });
+        const sBody   = scene.add.text(L.body.x,   L.body.y,   "👦",  { font: L.body.font   });
+        const sPants  = scene.add.text(L.pants.x,  L.pants.y,  "👖",  { font: L.pants.font  });
+        const sShirt  = scene.add.text(L.shirt.x,  L.shirt.y,  "👕",  { font: L.shirt.font  });
+        const sAccs   = scene.add.text(L.accs.x,   L.accs.y,   "",    { font: L.accs.font   });
+        const sHelmet = scene.add.text(L.helmet.x, L.helmet.y, "",    { font: L.helmet.font  });
+        const nameTag = scene.add.text(-30, 28, name,  { font: "11px Arial", fill: "#fff", backgroundColor: colorTag, padding: { x:3, y:1 } });
+        const hpBar   = scene.add.text(-30, 40, "HP ██████", { font: "9px Arial", fill: "#ff6b6b" });
+        const bubble  = scene.add.text(-50, -80, "", { font: "11px Arial", fill: "#111", backgroundColor: "#fffde7",
+                        stroke: "#888", strokeThickness: 1, padding: { x:4, y:2 }, wordWrap: { width: 120 } });
+        bubble.setAlpha(0);
+
+        const container = scene.add.container(x, y,
+            [sMount, sBody, sPants, sShirt, sAccs, sHelmet, nameTag, hpBar, bubble]);
+        scene.physics.world.enable(container);
+        container.body.setCollideWorldBounds(true).setSize(40, 40);
+
+        // 把 sprite 參照掛在 container 上
+        container._sMount = sMount; container._sBody = sBody;
+        container._sPants = sPants; container._sShirt = sShirt;
+        container._sAccs = sAccs;  container._sHelmet = sHelmet;
+        container._hpBar = hpBar;  container._bubble = bubble;
+        return container;
+    }
+
+    // 更新 AI 疊圖（邏輯與玩家 updateSprite 相同）
+    function updateAISprite(ai) {
+        const d = ai._data;
+        const hasMount = !!d.mountEmoji;
+        const S = hasMount ? MOUNT_SHIFT : 0;
+        const L = SPRITE_LAYERS;
+
+        ai._sMount.setText(hasMount ? d.mountEmoji : "");
+        ai._sMount.setPosition(L.mount.x, L.mount.y + S);
+
+        ai._sBody.setPosition(L.body.x, L.body.y + S);
+        ai._sBody.setText("👦");
+
+        ai._sPants.setPosition(L.pants.x, L.pants.y + S);
+        ai._sPants.setText(hasMount ? "" : "👖");
+
+        ai._sShirt.setPosition(L.shirt.x, L.shirt.y + S);
+        ai._sShirt.setText(d.armorEmoji || "👕");
+
+        ai._sAccs.setPosition(L.accs.x, L.accs.y + S);
+        ai._sAccs.setText(d.weaponEmoji || "");
+
+        ai._sHelmet.setPosition(L.helmet.x, L.helmet.y + S);
+        ai._sHelmet.setText(d.helmetEmoji || "");
+
+        // HP 條
+        const pct = Math.max(0, d.hp / d.maxHp);
+        const bars = Math.round(pct * 6);
+        ai._hpBar.setText("HP " + "█".repeat(bars) + "░".repeat(6 - bars));
+        ai._hpBar.setColor(pct > 0.5 ? "#55efc4" : pct > 0.25 ? "#fdcb6e" : "#ff6b6b");
+    }
+
+    // AI 說話泡泡
+    function aiSay(ai, msg, duration = 4000) {
+        ai._bubble.setText(msg).setAlpha(1);
+        setTimeout(() => { if (ai._bubble) ai._bubble.setAlpha(0); }, duration);
+    }
+
+    // AI 移動到目標點，回傳 Promise（到達後 resolve）
+    function aiMoveTo(scene, ai, tx, ty, speed) {
+        return new Promise(resolve => {
+            const ev = scene.time.addEvent({
+                delay: 100, loop: true,
                 callback: () => {
-                    if (!ai.active) return;
-                    const dist = Phaser.Math.Distance.Between(ai.x, ai.y, ai.targetX, ai.targetY);
-                    if (dist < 20) {
-                        // 到達目標後隨機選下一個目標（在城鎮或略外範圍）
-                        ai.targetX = Phaser.Math.Between(60, 400);
-                        ai.targetY = Phaser.Math.Between(60, 400);
+                    if (!ai.active) { ev.remove(); resolve(); return; }
+                    const dist = Phaser.Math.Distance.Between(ai.x, ai.y, tx, ty);
+                    if (dist < 25) {
+                        ai.body.setVelocity(0);
+                        ev.remove();
+                        resolve();
+                        return;
                     }
-                    const angle = Phaser.Math.Angle.Between(ai.x, ai.y, ai.targetX, ai.targetY);
-                    const spd = 70;
-                    ai.body.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
+                    const angle = Phaser.Math.Angle.Between(ai.x, ai.y, tx, ty);
+                    ai.body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
                 }
             });
+        });
+    }
 
-            // 定期與 Puter AI 請求新對白（每 12 秒）
-            const aiChatLoop = async () => {
-                try {
-                    const response = await puter.ai.chat(`你是RO城鎮玩家 ${names[i]}。請用一句話(12字內)說你正在城鎮閒逛的心情或計劃。`);
-                    const msg = response.toString().trim();
-                    logChat(names[i], msg);
-                    bubble.setText(msg).setAlpha(1);
-                    scene.time.delayedCall(5000, () => bubble.setAlpha(0));
-                } catch(e) {}
-                scene.time.delayedCall(12000, aiChatLoop);
-            };
+    // AI 自動升級裝備（根據現有 Zeny）
+    function aiAutoUpgrade(ai) {
+        const d = ai._data;
+        // 嘗試升武器
+        const nextWeaponTier = d.weaponTier + 1;
+        const weaponCosts = [0, 300, 600, 1200, 3500];
+        if (nextWeaponTier < AI_WEAPON_TIERS.length && d.zeny >= weaponCosts[nextWeaponTier]) {
+            d.zeny -= weaponCosts[nextWeaponTier];
+            d.weaponTier = nextWeaponTier;
+            const w = AI_WEAPON_TIERS[nextWeaponTier];
+            d.weaponEmoji = w.emoji; d.bonusAtk = w.atk;
+            updateAISprite(ai);
+            logChat(ai._name, `🛍️ 購入了 ${w.text}！ATK↑`);
+            ZeldaAudio.sfxBuy();
+            return true;
+        }
+        // 嘗試升防具
+        const nextArmorTier = d.armorTier + 1;
+        const armorCosts = [0, 200, 600, 1500, 4000];
+        if (nextArmorTier < AI_ARMOR_TIERS.length && d.zeny >= armorCosts[nextArmorTier]) {
+            d.zeny -= armorCosts[nextArmorTier];
+            d.armorTier = nextArmorTier;
+            const a = AI_ARMOR_TIERS[nextArmorTier];
+            d.armorEmoji = a.cloth; d.helmetEmoji = a.helmet; d.bonusDef = a.def;
+            updateAISprite(ai);
+            logChat(ai._name, `🛡️ 穿上了 ${a.text}！DEF↑`);
+            ZeldaAudio.sfxBuy();
+            return true;
+        }
+        // 嘗試買坐騎
+        const nextMountTier = d.mountTier + 1;
+        const mountCosts = [0, 400, 2000, 4500, 12000];
+        if (nextMountTier < AI_MOUNT_TIERS.length && d.zeny >= mountCosts[nextMountTier]) {
+            d.zeny -= mountCosts[nextMountTier];
+            d.mountTier = nextMountTier;
+            const m = AI_MOUNT_TIERS[nextMountTier];
+            d.mountEmoji = m.emoji; d.mountSpd = m.spd;
+            updateAISprite(ai);
+            logChat(ai._name, `🐾 騎上了 ${m.text}！速度↑`);
+            ZeldaAudio.sfxMount();
+            return true;
+        }
+        // 買紅水
+        if (d.zeny >= 80 && d.redPots < 5) {
+            d.zeny -= 80; d.redPots++;
+            logChat(ai._name, "🧴 補了瓶紅水備用");
+            return true;
+        }
+        return false;
+    }
 
-            // 啟動時說第一句話
+    // AI 主狀態機（async loop）
+    async function runAILoop(scene, ai) {
+        const d = ai._data;
+        while (ai.active) {
+            const spd = 90 + d.mountSpd;
+
+            // ── 狀態 1：出外狩獵 ──
+            const fieldX = Phaser.Math.Between(FIELD_MIN, 1800);
+            const fieldY = Phaser.Math.Between(FIELD_MIN, 1800);
+            aiSay(ai, "⚔️ 出去打怪了！");
+            await aiMoveTo(scene, ai, fieldX, fieldY, spd);
+
+            // 在野外攻打周圍怪物，直到 HP < 30% 或打了足夠次數
+            let kills = 0, maxKills = Phaser.Math.Between(3, 8);
+            while (ai.active && kills < maxKills && d.hp > d.maxHp * 0.3) {
+                // 找最近怪物
+                let nearest = null, minDist = 999999;
+                monsters.getChildren().forEach(m => {
+                    if (!m.active) return;
+                    const dist = Phaser.Math.Distance.Between(ai.x, ai.y, m.x, m.y);
+                    if (dist < minDist) { minDist = dist; nearest = m; }
+                });
+
+                if (nearest && minDist < 400) {
+                    aiSay(ai, `⚔️ 打 ${nearest.monsterName}！`);
+                    await aiMoveTo(scene, ai, nearest.x, nearest.y, spd);
+
+                    // 攻打迴圈
+                    while (ai.active && nearest.active && d.hp > d.maxHp * 0.2) {
+                        const atk = (d.baseAtk + d.bonusAtk) + Phaser.Math.Between(-3, 5);
+                        nearest.hp -= atk;
+                        ZeldaAudio.sfxAttack();
+                        showPopText(scene, nearest.x, nearest.y - 20, `-${atk}`, "#f1c40f");
+                        if (nearest.hp <= 0) {
+                            nearest.hp = 0;
+                            d.loot += Phaser.Math.Between(1, 3);
+                            d.exp  += Phaser.Math.Between(15, 30);
+                            ZeldaAudio.sfxTreasure();
+                            nearest.destroy();
+                            setTimeout(() => spawnMonster(scene), 4000);
+                            kills++;
+                            break;
+                        }
+                        // 被怪反擊
+                        const def = d.bonusDef;
+                        const dmg = Math.max(1, Phaser.Math.Between(3, 8) - def);
+                        d.hp = Math.max(0, d.hp - dmg);
+                        ZeldaAudio.sfxHurt();
+                        updateAISprite(ai);
+                        await new Promise(r => setTimeout(r, 700));
+                    }
+
+                    // 用紅水回血
+                    if (d.hp < d.maxHp * 0.5 && d.redPots > 0) {
+                        d.redPots--;
+                        d.hp = Math.min(d.maxHp, d.hp + 80);
+                        ZeldaAudio.sfxHeal();
+                        aiSay(ai, "💊 喝紅水回血！");
+                        updateAISprite(ai);
+                    }
+                } else {
+                    // 找不到怪物，往野外更深處走
+                    const rx = Phaser.Math.Between(FIELD_MIN, 1800);
+                    const ry = Phaser.Math.Between(FIELD_MIN, 1800);
+                    await aiMoveTo(scene, ai, rx, ry, spd);
+                }
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            // AI 升級判定
+            if (d.exp >= d.nextExp) {
+                d.level++; d.exp -= d.nextExp; d.nextExp = Math.floor(d.nextExp * 1.4);
+                d.maxHp += 20; d.maxSp += 8; d.baseAtk += 2;
+                d.hp = d.maxHp; d.sp = d.maxSp;
+                ZeldaAudio.sfxLevelUp();
+                logChat(ai._name, `🎉 升到 Lv.${d.level}！全滿狀態！`);
+            }
+
+            // ── 狀態 2：回城 ──
+            aiSay(ai, "🏃 回城賣結晶！");
+            await aiMoveTo(scene, ai, TOWN_CENTER.x, TOWN_CENTER.y, spd);
+
+            // ── 狀態 3：去道具店變賣結晶 ──
+            await aiMoveTo(scene, ai, NPC_POS.item.x, NPC_POS.item.y, spd);
+            if (d.loot > 0) {
+                const earned = d.loot * 15;
+                d.zeny += earned;
+                ZeldaAudio.sfxSell();
+                logChat(ai._name, `💰 變賣 ${d.loot} 顆結晶，得 ${earned}z！`);
+                aiSay(ai, `💰 賣了 ${d.loot} 顆結晶！`);
+                d.loot = 0;
+            }
+
+            // ── 狀態 4：去商店購買升裝 ──
+            // 先去武器店
+            await aiMoveTo(scene, ai, NPC_POS.weapon.x, NPC_POS.weapon.y, spd);
+            aiAutoUpgrade(ai);
+
+            // 再去防具店
+            await aiMoveTo(scene, ai, NPC_POS.armor.x, NPC_POS.armor.y, spd);
+            aiAutoUpgrade(ai);
+
+            // 有錢就去坐騎店
+            if (d.zeny > 400) {
+                await aiMoveTo(scene, ai, NPC_POS.mount.x, NPC_POS.mount.y, spd);
+                aiAutoUpgrade(ai);
+            }
+
+            // ── 狀態 5：城鎮待機 + 呼叫 Puter AI 對白 ──
+            d.hp = Math.min(d.maxHp, d.hp + Math.floor(d.maxHp * 0.4)); // 休息回血
+            d.sp = d.maxSp;
+            updateAISprite(ai);
+            aiSay(ai, "😌 在城鎮休息中…");
+
             try {
-                const response = await puter.ai.chat(`你是RO城鎮玩家 ${names[i]}。請用一句話(15字內)說自己要去跟商人買裝備、或者去變賣結晶。`);
-                const msg = response.toString().trim();
-                logChat(names[i], msg);
-                bubble.setText(msg).setAlpha(1);
-                scene.time.delayedCall(5000, () => bubble.setAlpha(0));
+                const wt  = AI_WEAPON_TIERS[d.weaponTier].text;
+                const at  = AI_ARMOR_TIERS[d.armorTier].text;
+                const prompt = `你是RO遊戲玩家「${ai._name}」，Lv.${d.level}，持有 ${d.zeny}z，` +
+                               `裝備${wt}和${at}。剛打完怪回城，請用12字內說一句話感想或下一步計劃。`;
+                const resp = await puter.ai.chat(prompt);
+                const msg = resp.toString().trim().slice(0, 30);
+                logChat(ai._name, msg);
+                aiSay(ai, msg, 6000);
             } catch(e) {}
 
-            // 延遲 12 秒後開始循環對白
-            scene.time.delayedCall(12000 + i * 4000, aiChatLoop);
+            // 休息一段時間再出發
+            await new Promise(r => setTimeout(r, Phaser.Math.Between(5000, 10000)));
         }
+    }
+
+    async function initPuterAIPlayers(scene) {
+        const configs = [
+            { name: "天賜",   color: "#2471a3", x: 160, y: 260 },
+            { name: "利雅",   color: "#8e44ad", x: 240, y: 280 },
+            { name: "戰鬥狂", color: "#c0392b", x: 200, y: 320 },
+        ];
+        for (const cfg of configs) {
+            const ai = createAISprite(scene, cfg.x, cfg.y, cfg.name, cfg.color);
+            ai._name = cfg.name;
+            ai._data = {
+                level: 1, exp: 0, nextExp: 80,
+                hp: 80, maxHp: 80, sp: 30, maxSp: 30,
+                baseAtk: 8, bonusAtk: 0, bonusDef: 0,
+                zeny: 200, loot: 0, redPots: 1,
+                weaponTier: 0, armorTier: 0, mountTier: 0,
+                weaponEmoji: "", armorEmoji: "👕", helmetEmoji: "",
+                mountEmoji: "", mountSpd: 0,
+            };
+            updateAISprite(ai);
+            aiPlayers.push(ai);
+
+            // 各角色錯開啟動時間，避免同時請求 API
+            const delay = configs.indexOf(cfg) * 3000;
+            setTimeout(() => runAILoop(scene, ai), delay + 1000);
+        }
+        logChat("系統", "🤖 3 位 AI 玩家加入世界！他們會自行狩獵、購買裝備並成長。");
     }
 
     function showPopText(scene, x, y, text, color) {
