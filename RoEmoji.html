@@ -297,6 +297,7 @@
     <div class="inv-slot"><span>⚔️ 武器:</span><span id="eq-weapon" style="color:#c0392b;font-weight:bold;">（無武器）</span></div>
     <div class="inv-slot"><span>🛡️ 防具:</span><span id="eq-armor"  style="color:#2471a3;font-weight:bold;">（無防具）</span></div>
     <div class="inv-slot"><span>⛑️ 頭盔:</span><span id="eq-helmet" style="color:#7d3c98;font-weight:bold;">（無頭盔）</span></div>
+    <div class="inv-slot"><span>🐴 坐騎:</span><span id="eq-mount"  style="color:#e67e22;font-weight:bold;">（無坐騎）</span></div>
     <div class="inv-slot"><span>🔰 防禦:</span><span id="stat-def"  style="color:#1e8449;font-weight:bold;">0</span></div>
     <div class="inv-slot"><span>💎 結晶:</span><span id="inv-loot"  style="color:#7d3c98;">結晶 x0</span></div>
     <div class="inv-slot"><span>❤️ 紅水:</span><span><b id="inv-red-pot">x0</b> <button class="use-btn use-btn-red" onclick="useRedPotion()">使用</button></span></div>
@@ -368,6 +369,7 @@
                 <div class="ro-panel-title">🎒 背包</div>
                 <div class="inv-slot"><span>⚔️</span><span id="eq-weapon-m" style="color:#c0392b;font-size:9px;font-weight:bold;">（無武器）</span></div>
                 <div class="inv-slot"><span>🛡️</span><span id="eq-armor-m"  style="color:#2471a3;font-size:9px;font-weight:bold;">（無防具）</span></div>
+                <div class="inv-slot"><span>🐴</span><span id="eq-mount-m" style="color:#e67e22;font-size:9px;font-weight:bold;">（無坐騎）</span></div>
                 <div class="inv-slot"><span>💎</span><span id="inv-loot-m" style="color:#7d3c98;">x0</span></div>
                 <div class="inv-slot"><span>❤️</span><span><b id="inv-red-m">x0</b> <button class="use-btn use-btn-red" onclick="useRedPotion()">用</button></span></div>
                 <div class="inv-slot"><span>💧</span><span><b id="inv-blue-m">x0</b> <button class="use-btn use-btn-blue" onclick="useBluePotion()">用</button></span></div>
@@ -461,35 +463,68 @@
     } else {
         window.addEventListener('load', () => setTimeout(_tryLaunch, 0));
     }
-    // 疊圖用的 Phaser.GameObjects.Text 參照
+    // ── 疊圖 Phaser 物件參照 ──
     let player;
-    let spriteBody, spriteArmor, spriteWeapon, spriteHelmet;
+    let spriteMount;   // 層4：坐騎（最底，角色下方，取代褲子）
+    let spriteBody;    // 層0：身體 👦（臉部不被遮）
+    let spritePants;   // 層1b：褲子 👖（無坐騎時顯示）
+    let spriteCloth;   // 層1a：上衣 👕（蓋胸部，購買防具後替換）
+    let spriteAccs;    // 層2：武器/飾品 💎
+    let spriteHelmet;  // 層3：頭盔 👑
 
-    // 各部位疊圖定義表
+    // 座標系：容器原點(0,0) = 角色「腰部中心」
+    // 各 emoji 從 setPosition 的 y 開始往下畫（y 增加 = 往下）
+    //
+    //  y=-56~-20 : 頭部區（👦 頭）
+    //  y=-20~0   : 胸部區（👕 上衣）
+    //  y=0~+28   : 腰腿區（👖 褲子 / 🐴 坐騎）
+    //
+    //  無坐騎              有坐騎（整體上移 20px）
+    //  helmet y=-46        helmet y=-66
+    //  body   y=-36        body   y=-56
+    //  shirt  y=-18        shirt  y=-38
+    //  pants  y=+12  ←顯示 pants  y=hide
+    //  mount  y=hide       mount  y=0  ←顯示
+
     const SPRITE_LAYERS = {
-        body:   { emoji: "🧍", font: "40px Arial", x: -20, y: -18 },
-        armor:  { emoji: "",   font: "34px Arial", x: -18, y: -16 },   // 預設無防具
-        weapon: { emoji: "",   font: "28px Arial", x:  10, y: -10 },   // 預設無武器（手持）
-        helmet: { emoji: "",   font: "26px Arial", x: -20, y: -50 },   // 預設無頭盔
+        // 層4 坐騎：疊在褲子同位置(y=22)，有坐騎時取代褲子
+        mount:  { emoji: "",   font: "32px Arial", x: -16, y:  22 },
+        // 層0 身體：上移至 y=-52，38px字體，臉底約 y=-32，完整露出不被上衣擋
+        body:   { emoji: "👦", font: "38px Arial", x: -19, y: -52 },
+        // 層1a 上衣：y=-8，頂部在臉底(-32)以下，不遮臉
+        shirt:  { emoji: "👕", font: "30px Arial", x: -15, y:  -8 },
+        // 層1b 褲子：緊接上衣底 y=-8+30=+22
+        pants:  { emoji: "👖", font: "28px Arial", x: -14, y:  22 },
+        // 層2 武器/飾品：右手
+        accs:   { emoji: "",   font: "26px Arial", x:  16, y:   2 },
+        // 層3 頭盔：貼著頭頂 y=-52-8=-60
+        helmet: { emoji: "",   font: "26px Arial", x: -13, y: -62 },
     };
+    // 有坐騎時整體上移量（讓人坐在動物背上）
+    const MOUNT_SHIFT = -20;
 
-    // 擴充包含貨幣（Zeny）與防具欄位的資料結構
+    // 擴充包含貨幣（Zeny）、防具與坐騎欄位的資料結構
     let playerData = {
         level: 1, exp: 0, nextExp: 100,
         hp: 100, maxHp: 100,
         sp: 40, maxSp: 40,
         str: 5, agi: 5, vit: 5, points: 5,
         baseAtk: 10, bonusAtk: 0,
-        bonusDef: 0,                     // 防禦加成
+        bonusDef: 0,
         lootCount: 0, bluePotions: 2, zeny: 500,
         lastAttackTime: 0,
         // 裝備欄
-        weaponText:  "（無武器）",
-        armorText:   "（無防具）",
-        helmetText:  "（無頭盔）",
+        weaponText:   "（無武器）",
+        armorText:    "（無防具）",
+        helmetText:   "（無頭盔）",
+        mountText:    "（無坐騎）",
         weaponEmoji:  "",
-        armorEmoji:   "",
+        armorShirt:   "👕",   // 層1a 上衣（預設👕，購買防具後替換）
+        armorPants:   "👖",   // 層1b 褲子（預設👖，有坐騎時隱藏）
+        armorEmoji:   "",      // 購買防具後的上衣替換 emoji
         helmetEmoji:  "",
+        mountEmoji:   "",      // 坐騎（有時隱藏褲子）
+        mountSpeedBonus: 0,    // 坐騎移速加成
         get attackCooldown() { return Math.max(250, 1000 - (this.agi * 45)); }
     };
 
@@ -539,6 +574,15 @@
         itemNpc.setData('type', 'item');
         npcs.add(itemNpc);
 
+        // 坐騎商人
+        const mountNpc = scene.add.container(340, 230);
+        mountNpc.add(scene.add.text(-20, -20, "🐴", { font: "36px Arial" }));
+        mountNpc.add(scene.add.text(-35, 20, "坐騎商人", { font: "bold 12px Arial", fill: "#f39c12", backgroundColor: "#000" }));
+        scene.physics.world.enable(mountNpc, Phaser.Physics.Arcade.STATIC_BODY);
+        mountNpc.body.setSize(50, 50);
+        mountNpc.setData('type', 'mount');
+        npcs.add(mountNpc);
+
         // 防具商人
         const armorNpc = scene.add.container(215, 280);
         armorNpc.add(scene.add.text(-20, -20, "🛡️", { font: "36px Arial" }));
@@ -548,17 +592,23 @@
         armorNpc.setData('type', 'armor');
         npcs.add(armorNpc);
 
-        // --- 4. 玩家初始化（多層疊圖） ---
-        // 層 0：身體底圖
-        spriteBody   = scene.add.text(SPRITE_LAYERS.body.x,   SPRITE_LAYERS.body.y,   SPRITE_LAYERS.body.emoji,   { font: SPRITE_LAYERS.body.font });
-        // 層 1：防具（穿在身體上）
-        spriteArmor  = scene.add.text(SPRITE_LAYERS.armor.x,  SPRITE_LAYERS.armor.y,  SPRITE_LAYERS.armor.emoji,  { font: SPRITE_LAYERS.armor.font });
-        // 層 2：武器（右手持握，偏右下）
-        spriteWeapon = scene.add.text(SPRITE_LAYERS.weapon.x, SPRITE_LAYERS.weapon.y, SPRITE_LAYERS.weapon.emoji, { font: SPRITE_LAYERS.weapon.font });
-        // 層 3：頭盔（頭頂）
-        spriteHelmet = scene.add.text(SPRITE_LAYERS.helmet.x, SPRITE_LAYERS.helmet.y, SPRITE_LAYERS.helmet.emoji, { font: SPRITE_LAYERS.helmet.font });
+        // --- 4. 玩家初始化（6層疊圖，渲染順序由下到上） ---
+        // 層4：坐騎（最底，有坐騎時顯示，取代褲子）
+        spriteMount  = scene.add.text(SPRITE_LAYERS.mount.x,  SPRITE_LAYERS.mount.y,  "",                         { font: SPRITE_LAYERS.mount.font  });
+        // 層0：身體 👦（臉部不可被遮）
+        spriteBody   = scene.add.text(SPRITE_LAYERS.body.x,   SPRITE_LAYERS.body.y,   SPRITE_LAYERS.body.emoji,   { font: SPRITE_LAYERS.body.font   });
+        // 層1b：褲子 👖（無坐騎時顯示在腰部以下）
+        spritePants  = scene.add.text(SPRITE_LAYERS.pants.x,  SPRITE_LAYERS.pants.y,  "👖",                        { font: SPRITE_LAYERS.pants.font  });
+        // 層1a：上衣 👕（蓋胸部，不遮臉）
+        spriteCloth  = scene.add.text(SPRITE_LAYERS.shirt.x,  SPRITE_LAYERS.shirt.y,  "👕",                        { font: SPRITE_LAYERS.shirt.font  });
+        // 層2：武器/飾品（右手）
+        spriteAccs   = scene.add.text(SPRITE_LAYERS.accs.x,   SPRITE_LAYERS.accs.y,   "",                         { font: SPRITE_LAYERS.accs.font   });
+        // 層3：頭盔（頭頂）
+        spriteHelmet = scene.add.text(SPRITE_LAYERS.helmet.x, SPRITE_LAYERS.helmet.y, "",                         { font: SPRITE_LAYERS.helmet.font  });
 
-        player = scene.add.container(200, 300, [spriteBody, spriteArmor, spriteWeapon, spriteHelmet]);
+        // container 子物件順序 = 渲染順序（先加 = 底層）
+        // 坐騎→身體→褲子→上衣→武器→頭盔
+        player = scene.add.container(200, 300, [spriteMount, spriteBody, spritePants, spriteCloth, spriteAccs, spriteHelmet]);
         scene.physics.world.enable(player);
         player.body.setCollideWorldBounds(true).setSize(45, 45);
 
@@ -606,7 +656,7 @@
     }
 
     function update(time) {
-        const speed = 210;
+        const speed = 210 + playerData.agi * 5 + (playerData.mountSpeedBonus || 0);
         let vx = 0, vy = 0;
 
         if (cursors.left.isDown) vx = -speed;
@@ -709,6 +759,98 @@
                         <div class="shop-item-desc">Atk +110｜全屬性 +5</div>
                     </div>
                     <button class="shop-btn shop-btn-buy" onclick="buyItem('weapon_7',8888)">8888z</button>
+                </div>
+            `;
+        } else if(type === 'mount') {
+            shopTitle.textContent = "🐾 普隆德拉坐騎驛站";
+            shopContent.innerHTML = `
+                <div class="shop-section-title">🌿 普通坐騎</div>
+                <div class="shop-row row-normal">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐮 牛牛坐騎 <span class="grade grade-normal">普通</span></div>
+                        <div class="shop-item-desc">移速 +20｜代步首選</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_1',400)">400z</button>
+                </div>
+                <div class="shop-row row-magic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐸 青蛙快騎 <span class="grade grade-magic">魔法</span></div>
+                        <div class="shop-item-desc">移速 +35｜跳躍輕盈</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_2',900)">900z</button>
+                </div>
+                <div class="shop-section-title">🌟 稀有坐騎</div>
+                <div class="shop-row row-rare">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐯 虎面坐騎 <span class="grade grade-rare">稀有</span></div>
+                        <div class="shop-item-desc">移速 +50｜山林之霸</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_3',2000)">2000z</button>
+                </div>
+                <div class="shop-row row-rare">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🦊 狐狸坐騎 <span class="grade grade-rare">稀有</span></div>
+                        <div class="shop-item-desc">移速 +45｜敏捷如風</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_4',1800)">1800z</button>
+                </div>
+                <div class="shop-row row-rare">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐺 狼王坐騎 <span class="grade grade-rare">稀有</span></div>
+                        <div class="shop-item-desc">移速 +55｜暗夜獵手</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_5',2500)">2500z</button>
+                </div>
+                <div class="shop-section-title">💥 史詩坐騎</div>
+                <div class="shop-row row-epic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🦁 獅王戰騎 <span class="grade grade-epic">史詩</span></div>
+                        <div class="shop-item-desc">移速 +70｜百獸之王</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_6',4500)">4500z</button>
+                </div>
+                <div class="shop-row row-epic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐼 熊貓戰騎 <span class="grade grade-epic">史詩</span></div>
+                        <div class="shop-item-desc">移速 +60｜黑白霸主</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_7',4000)">4000z</button>
+                </div>
+                <div class="shop-row row-epic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐨 無尾熊御駕 <span class="grade grade-epic">史詩</span></div>
+                        <div class="shop-item-desc">移速 +65｜澳洲神獸</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_8',4200)">4200z</button>
+                </div>
+                <div class="shop-row row-epic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐵 猿王御駕 <span class="grade grade-epic">史詩</span></div>
+                        <div class="shop-item-desc">移速 +80｜叢林之王</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_9',5500)">5500z</button>
+                </div>
+                <div class="shop-row row-epic">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐻 熊神坐騎 <span class="grade grade-epic">史詩</span></div>
+                        <div class="shop-item-desc">移速 +75｜森林守護神</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_a',5000)">5000z</button>
+                </div>
+                <div class="shop-section-title">🔥 傳說坐騎</div>
+                <div class="shop-row row-legend">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🐲 神龍御駕 <span class="grade grade-legend">傳說</span></div>
+                        <div class="shop-item-desc">移速 +100｜傳說霸主</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_b',12000)">12000z</button>
+                </div>
+                <div class="shop-row row-legend">
+                    <div class="shop-item-info">
+                        <div class="shop-item-name">🦄 獨角獸 <span class="grade grade-legend">傳說</span></div>
+                        <div class="shop-item-desc">移速 +90｜夢幻神獸</div>
+                    </div>
+                    <button class="shop-btn shop-btn-buy" onclick="buyItem('mount_c',10000)">10000z</button>
                 </div>
             `;
         } else if(type === 'armor') {
@@ -837,21 +979,65 @@
         weapon_7: { atk: 110, emoji: "🌟",  text: "🌟 星滅神劍 (+110)",   name: "星滅神劍" },
     };
 
-    // ── 防具表：emoji 疊在身體上；頭盔另外一層 ──
+    // ── 防具表：層1衣物(cloth) + 層3頭盔 ──
     const ARMOR_TABLE = {
-        armor_1: { def: 5,  emoji: "🥋", helmet: "⛑️",  text: "🥋 皮革輕甲 (+5Def)",    name: "皮革輕甲",   grade: "normal" },
-        armor_2: { def: 12, emoji: "🛡️", helmet: "🪖",  text: "🛡️ 鋼鐵胸甲 (+12Def)",  name: "鋼鐵胸甲",  grade: "magic"  },
-        armor_3: { def: 22, emoji: "⚜️", helmet: "👑",  text: "⚜️ 騎士重甲 (+22Def)",  name: "騎士重甲",  grade: "rare"   },
-        armor_4: { def: 38, emoji: "🔰", helmet: "🎭",  text: "🔰 龍鱗神甲 (+38Def)",   name: "龍鱗神甲",  grade: "epic"   },
-        armor_5: { def: 60, emoji: "💎", helmet: "✨",  text: "💎 傳說聖甲 (+60Def)",   name: "傳說聖甲",  grade: "legend" },
+        armor_1: { def: 5,  cloth: "🥋", helmet: "⛑️",  text: "🥋 皮革輕甲 (+5Def)",   name: "皮革輕甲",  grade: "normal" },
+        armor_2: { def: 12, cloth: "🧥", helmet: "🪖",  text: "🧥 鋼鐵胸甲 (+12Def)",  name: "鋼鐵胸甲", grade: "magic"  },
+        armor_3: { def: 22, cloth: "⚜️", helmet: "👑",  text: "⚜️ 騎士重甲 (+22Def)",  name: "騎士重甲", grade: "rare"   },
+        armor_4: { def: 38, cloth: "🔰", helmet: "🎭",  text: "🔰 龍鱗神甲 (+38Def)",  name: "龍鱗神甲", grade: "epic"   },
+        armor_5: { def: 60, cloth: "🌟", helmet: "✨",  text: "🌟 傳說聖甲 (+60Def)",  name: "傳說聖甲", grade: "legend" },
     };
 
-    // 同步疊圖到 Phaser sprite
+    // ── 坐騎表：層4，動物 emoji，提供移速加成 ──
+    // 坐騎全部使用有正面頭像的動物臉 emoji
+    const MOUNT_TABLE = {
+        mount_1: { emoji: "🐮", spd: 20,  text: "🐮 牛牛坐騎 (+20速)",   name: "牛牛坐騎", grade: "normal" },
+        mount_2: { emoji: "🐸", spd: 35,  text: "🐸 青蛙快騎 (+35速)",   name: "青蛙快騎", grade: "magic"  },
+        mount_3: { emoji: "🐯", spd: 50,  text: "🐯 虎面坐騎 (+50速)",   name: "虎面坐騎", grade: "rare"   },
+        mount_4: { emoji: "🦊", spd: 45,  text: "🦊 狐狸坐騎 (+45速)",   name: "狐狸坐騎", grade: "rare"   },
+        mount_5: { emoji: "🐺", spd: 55,  text: "🐺 狼王坐騎 (+55速)",   name: "狼王坐騎", grade: "rare"   },
+        mount_6: { emoji: "🦁", spd: 70,  text: "🦁 獅王戰騎 (+70速)",   name: "獅王戰騎", grade: "epic"   },
+        mount_7: { emoji: "🐼", spd: 60,  text: "🐼 熊貓戰騎 (+60速)",   name: "熊貓戰騎", grade: "epic"   },
+        mount_8: { emoji: "🐨", spd: 65,  text: "🐨 無尾熊御駕 (+65速)", name: "無尾熊御駕",grade: "epic"  },
+        mount_9: { emoji: "🐵", spd: 80,  text: "🐵 猿王御駕 (+80速)",   name: "猿王御駕", grade: "epic"   },
+        mount_a: { emoji: "🐻", spd: 75,  text: "🐻 熊神坐騎 (+75速)",   name: "熊神坐騎", grade: "epic"   },
+        mount_b: { emoji: "🐲", spd: 100, text: "🐲 神龍御駕 (+100速)",  name: "神龍御駕", grade: "legend" },
+        mount_c: { emoji: "🦄", spd: 90,  text: "🦄 獨角獸 (+90速)",     name: "獨角獸",   grade: "legend" },
+    };
+
+    // 同步所有疊圖層到 Phaser sprite
+    // 座標原點(0,0) = 腰部中心
+    // 無坐騎：👦body(-36) / 👕shirt(-18) / 👖pants(+12) 三層垂直對齊
+    // 有坐騎：整體上移 MOUNT_SHIFT，👖褲子隱藏，🐴坐騎從腰部(y=0)顯示
     function updateSprite() {
-        if (!spriteWeapon || !spriteArmor || !spriteHelmet) return;
-        spriteWeapon.setText(playerData.weaponEmoji || "");
-        spriteArmor.setText(playerData.armorEmoji   || "");
-        spriteHelmet.setText(playerData.helmetEmoji  || "");
+        if (!spriteMount || !spriteBody || !spritePants || !spriteCloth || !spriteAccs || !spriteHelmet) return;
+
+        const hasMount = !!playerData.mountEmoji;
+        const S = hasMount ? MOUNT_SHIFT : 0;  // 有坐騎時整體上移
+
+        // 層4：坐騎（y=0 腰部，有坐騎才顯示）
+        spriteMount.setText(hasMount ? playerData.mountEmoji : "");
+        spriteMount.setPosition(SPRITE_LAYERS.mount.x, SPRITE_LAYERS.mount.y);
+
+        // 層0：身體 👦（頭頂 y=-36+S，臉永遠在上衣之上）
+        spriteBody.setPosition(SPRITE_LAYERS.body.x, SPRITE_LAYERS.body.y + S);
+        spriteBody.setText(SPRITE_LAYERS.body.emoji);
+
+        // 層1b：褲子 👖（有坐騎時隱藏，無坐騎時顯示在腰部以下 y=+12）
+        spritePants.setPosition(SPRITE_LAYERS.pants.x, SPRITE_LAYERS.pants.y + S);
+        spritePants.setText(hasMount ? "" : (playerData.armorPants || "👖"));
+
+        // 層1a：上衣 👕（蓋胸部不遮臉，y=-18+S；購買防具後替換 emoji）
+        spriteCloth.setPosition(SPRITE_LAYERS.shirt.x, SPRITE_LAYERS.shirt.y + S);
+        spriteCloth.setText(playerData.armorEmoji || playerData.armorShirt || "👕");
+
+        // 層2：武器/飾品（右腰旁，y=-8+S）
+        spriteAccs.setPosition(SPRITE_LAYERS.accs.x, SPRITE_LAYERS.accs.y + S);
+        spriteAccs.setText(playerData.weaponEmoji || "");
+
+        // 層3：頭盔（頭頂 y=-46+S）
+        spriteHelmet.setPosition(SPRITE_LAYERS.helmet.x, SPRITE_LAYERS.helmet.y + S);
+        spriteHelmet.setText(playerData.helmetEmoji || "");
     }
 
     function buyItem(itemId, cost) {
@@ -870,13 +1056,20 @@
             logChat("商店", `🛍️ 裝備了 [${w.name}]！ATK +${w.atk}`);
         } else if(ARMOR_TABLE[itemId]) {
             const a = ARMOR_TABLE[itemId];
-            playerData.bonusDef   = a.def;
+            playerData.bonusDef    = a.def;
             playerData.armorText   = a.text;
-            playerData.armorEmoji  = a.emoji;
-            playerData.helmetEmoji = a.helmet;
+            playerData.armorEmoji  = a.cloth;   // 層1 衣物
+            playerData.helmetEmoji = a.helmet;  // 層3 頭盔
             playerData.helmetText  = a.name + " 頭盔";
             updateSprite();
             logChat("商店", `🛍️ 裝備了 [${a.name}]！DEF +${a.def}`);
+        } else if(MOUNT_TABLE[itemId]) {
+            const m = MOUNT_TABLE[itemId];
+            playerData.mountEmoji      = m.emoji;
+            playerData.mountText       = m.text;
+            playerData.mountSpeedBonus = m.spd;
+            updateSprite();
+            logChat("商店", `🐾 騎上了 [${m.name}]！移動速度 +${m.spd}！`);
         } else if(itemId === 'red_pot_s') {
             playerData.redPotions = (playerData.redPotions || 0) + 1;
             playerData._redPotHeal = 30;
@@ -1068,7 +1261,8 @@
         _setEl('inv-red-pot',  `x${playerData.redPotions || 0}`);
         _setEl('eq-weapon',  playerData.weaponText);
         _setEl('eq-armor',   playerData.armorText  || '（無防具）');
-        _setEl('eq-helmet',  playerData.helmetText || '（無頭盔）');
+        _setEl('eq-helmet',  playerData.helmetText  || '（無頭盔）');
+        _setEl('eq-mount',   playerData.mountText   || '（無坐騎）');
         _setEl('stat-pts',   playerData.points);
         _setEl('stat-def',   (playerData.bonusDef || 0) + Math.floor(playerData.vit / 3));
         _setEl('p-str',      playerData.str);
@@ -1089,6 +1283,7 @@
         _setEl('inv-red-m',   `x${playerData.redPotions || 0}`);
         _setEl('eq-weapon-m', playerData.weaponText);
         _setEl('eq-armor-m',  playerData.armorText  || '（無防具）');
+        _setEl('eq-mount-m',  playerData.mountText  || '（無坐騎）');
         updateSprite();
     }
 
@@ -1234,9 +1429,12 @@
             bonusDef:    playerData.bonusDef    || 0,
             weaponEmoji: playerData.weaponEmoji || "",
             armorText:   playerData.armorText   || "（無防具）",
-            armorEmoji:  playerData.armorEmoji  || "",
-            helmetText:  playerData.helmetText  || "（無頭盔）",
-            helmetEmoji: playerData.helmetEmoji || "",
+            armorEmoji:       playerData.armorEmoji       || "",
+            helmetText:       playerData.helmetText       || "（無頭盔）",
+            helmetEmoji:      playerData.helmetEmoji      || "",
+            mountText:        playerData.mountText        || "（無坐騎）",
+            mountEmoji:       playerData.mountEmoji       || "",
+            mountSpeedBonus:  playerData.mountSpeedBonus  || 0,
             lootCount: playerData.lootCount,
             bluePotions: playerData.bluePotions,
             redPotions: playerData.redPotions || 0,
@@ -1269,9 +1467,12 @@
             playerData.bonusDef    = data.bonusDef    || 0;
             playerData.weaponEmoji = data.weaponEmoji || "";
             playerData.armorText   = data.armorText   || "（無防具）";
-            playerData.armorEmoji  = data.armorEmoji  || "";
-            playerData.helmetText  = data.helmetText  || "（無頭盔）";
-            playerData.helmetEmoji = data.helmetEmoji || "";
+            playerData.armorEmoji      = data.armorEmoji      || "";
+            playerData.helmetText      = data.helmetText      || "（無頭盔）";
+            playerData.helmetEmoji     = data.helmetEmoji     || "";
+            playerData.mountText       = data.mountText       || "（無坐騎）";
+            playerData.mountEmoji      = data.mountEmoji      || "";
+            playerData.mountSpeedBonus = data.mountSpeedBonus || 0;
             playerData.lootCount = data.lootCount;
             playerData.bluePotions = data.bluePotions;
             playerData.redPotions = data.redPotions || 0;

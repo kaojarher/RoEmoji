@@ -487,18 +487,18 @@
     //  mount  y=hide       mount  y=0  ←顯示
 
     const SPRITE_LAYERS = {
-        // 層4 坐騎：與褲子同高(y=+22)，人坐其上
-        mount:  { emoji: "",   font: "32px Arial", x: -16, y:  -6 },  // 疊在褲子上方(y=22-28≈-6)
-        // 層0 身體：👦 頭頂 y=-36，不動
-        body:   { emoji: "👦", font: "38px Arial", x: -19, y: -36 },
-        // 層1a 上衣：下移至 y=-8（比原本 -18 再低 10px）
+        // 層4 坐騎：疊在褲子同位置(y=22)，有坐騎時取代褲子
+        mount:  { emoji: "",   font: "32px Arial", x: -16, y:  22 },
+        // 層0 身體：上移至 y=-52，38px字體，臉底約 y=-32，完整露出不被上衣擋
+        body:   { emoji: "👦", font: "38px Arial", x: -19, y: -52 },
+        // 層1a 上衣：y=-8，頂部在臉底(-32)以下，不遮臉
         shirt:  { emoji: "👕", font: "30px Arial", x: -15, y:  -8 },
-        // 層1b 褲子：緊接上衣底部 y=-8+30=+22
+        // 層1b 褲子：緊接上衣底 y=-8+30=+22
         pants:  { emoji: "👖", font: "28px Arial", x: -14, y:  22 },
-        // 層2 武器/飾品：右手，跟著衣服下移
+        // 層2 武器/飾品：右手
         accs:   { emoji: "",   font: "26px Arial", x:  16, y:   2 },
-        // 層3 頭盔：頭頂，不動
-        helmet: { emoji: "",   font: "26px Arial", x: -13, y: -46 },
+        // 層3 頭盔：貼著頭頂 y=-52-8=-60
+        helmet: { emoji: "",   font: "26px Arial", x: -13, y: -62 },
     };
     // 有坐騎時整體上移量（讓人坐在動物背上）
     const MOUNT_SHIFT = -20;
