@@ -185,6 +185,35 @@
         .btn-sp-pot { background: radial-gradient(circle at 35% 35%, #2980b9, #1a6fa8); }
 
         /* ===== 音效提示 ===== */
+        /* ── 任務追蹤條 ── */
+        #quest-tracker {
+            position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+            background: rgba(10,20,40,0.88); border: 1px solid #f39c12;
+            border-radius: 8px; padding: 5px 14px; font-size: 11px; color: #f9e79f;
+            z-index: 200; min-width: 220px; max-width: 340px; display: none;
+            pointer-events: none;
+        }
+        #quest-tracker .qt-title { font-weight: bold; color: #f39c12; margin-bottom: 3px; font-size: 12px; }
+        #quest-tracker .qt-row   { display: flex; justify-content: space-between; gap: 8px; }
+        #quest-tracker .qt-done  { color: #2ecc71; }
+        /* ── 交易面板 ── */
+        #trade-window {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            width: 340px; max-height: 80vh; z-index: 400; display: none; flex-direction: column;
+        }
+        .trade-panel { display: flex; gap: 8px; }
+        .trade-col { flex: 1; }
+        .trade-col-title { font-size: 11px; font-weight: bold; color: #f39c12; margin-bottom: 4px; border-bottom: 1px solid #4a6d96; padding-bottom: 2px; }
+        .trade-slot { display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,0.08); border-radius: 4px; padding: 4px 6px;
+            margin: 3px 0; font-size: 10px; color: #eee; }
+        .trade-add-btn { background: #27ae60; color: #fff; border: none; border-radius: 3px;
+            padding: 2px 7px; font-size: 10px; cursor: pointer; }
+        .trade-remove-btn { background: #e74c3c; color: #fff; border: none; border-radius: 3px;
+            padding: 2px 7px; font-size: 10px; cursor: pointer; }
+        .trade-confirm-btn { background: linear-gradient(135deg,#f39c12,#e67e22); color: #fff;
+            border: none; border-radius: 5px; padding: 7px 0; width: 100%; margin-top: 8px;
+            font-size: 12px; font-weight: bold; cursor: pointer; }
         #sfx-indicator { position: fixed; top: 8px; right: 10px; left: auto; transform: none; background: rgba(0,0,0,0.55); color: #aed6f1; border: 1px solid #5b7da3; border-radius: 20px; padding: 3px 10px; font-size: 10px; opacity: 0.8; pointer-events: all; cursor: pointer; transition: opacity 0.3s; z-index: 999; }
 
         /* ===================================
@@ -264,6 +293,41 @@
 <body>
 
 <div id="game-container"></div>
+
+<!-- 任務追蹤條（頂部中央） -->
+<div id="quest-tracker">
+    <div class="qt-title">📜 <span id="qt-name">—</span></div>
+    <div id="qt-rows"></div>
+</div>
+
+<!-- 交易視窗 -->
+<div id="trade-window" class="ro-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:bold;font-size:14px;">🔄 玩家交易台</span>
+        <button class="shop-close-btn" onclick="closeTrade()">✕ 關閉</button>
+    </div>
+    <div style="font-size:10px;color:#aaa;margin-bottom:6px;">與 AI 玩家進行物品或 Zeny 交易</div>
+    <div class="trade-panel">
+        <div class="trade-col">
+            <div class="trade-col-title">👤 我方提供</div>
+            <div id="trade-my-items"></div>
+            <div class="trade-slot">
+                💰 Zeny: <input id="trade-zeny-input" type="number" min="0" value="0"
+                    style="width:60px;background:#1a2a3c;color:#fff;border:1px solid #4a6d96;border-radius:3px;padding:2px 4px;font-size:10px;">
+                <button class="trade-add-btn" onclick="tradeAddZeny()">加入</button>
+            </div>
+            <div id="trade-my-zeny" class="trade-slot">💰 提供：<b>0 z</b></div>
+        </div>
+        <div style="display:flex;align-items:center;font-size:20px;color:#f39c12;padding:0 6px;">⇄</div>
+        <div class="trade-col">
+            <div class="trade-col-title">🤖 對方提供</div>
+            <div id="trade-ai-items"></div>
+            <div id="trade-ai-zeny" class="trade-slot">💰 對方：<b>0 z</b></div>
+        </div>
+    </div>
+    <button class="trade-confirm-btn" onclick="confirmTrade()">✅ 確認交易</button>
+    <div id="trade-status" style="font-size:10px;color:#f1c40f;text-align:center;margin-top:4px;min-height:16px;"></div>
+</div>
 
 <div id="sfx-indicator" onclick="toggleAudioMute()" title="點擊靜音/開啟" style="cursor:pointer;">🎵 音效開</div>
 
@@ -867,6 +931,24 @@
         mountNpc.setData('type', 'mount');
         npcs.add(mountNpc);
 
+        // 任務發布員（公告欄）
+        const questNpc = scene.add.container(130, 150);
+        questNpc.add(scene.add.text(-20,-20,'📋',{font:'36px Arial'}));
+        questNpc.add(scene.add.text(-35,20,'任務員',{font:'bold 12px Arial',fill:'#f39c12',backgroundColor:'#000'}));
+        scene.physics.world.enable(questNpc,Phaser.Physics.Arcade.STATIC_BODY);
+        questNpc.body.setSize(50,50);
+        questNpc.setData('type','quest');
+        npcs.add(questNpc);
+
+        // 交易行（可與 AI 玩家交易）
+        const tradeNpc = scene.add.container(320, 150);
+        tradeNpc.add(scene.add.text(-20,-20,'🔄',{font:'36px Arial'}));
+        tradeNpc.add(scene.add.text(-35,20,'交易行',{font:'bold 12px Arial',fill:'#2ecc71',backgroundColor:'#000'}));
+        scene.physics.world.enable(tradeNpc,Phaser.Physics.Arcade.STATIC_BODY);
+        tradeNpc.body.setSize(50,50);
+        tradeNpc.setData('type','trade');
+        npcs.add(tradeNpc);
+
         // 防具商人
         const armorNpc = scene.add.container(215, 280);
         armorNpc.add(scene.add.text(-20, -20, "🛡️", { font: "36px Arial" }));
@@ -976,6 +1058,8 @@
         targetPointer = null;
         const type = npcEntity.getData('type');
         ZeldaAudio.sfxNpc();
+        if (type === 'quest')  { openQuestUI(); return; }
+        if (type === 'trade')  { openTradeUI(); return; }
         openShopUI(type);
     }
 
@@ -1489,6 +1573,7 @@
 
                 ZeldaAudio.sfxTreasure();
                 logChat("系統", `⚔️ 擊敗了 ${deadName}！獲得 ${expGain} EXP、${lootGain} 顆結晶！`);
+                questTrackKill(deadName);
                 playerData.lootCount += lootGain;
                 playerData.exp       += expGain;
                 showPopText(scene, deadX, deadY - 40, `+${expGain}EXP`, "#f1c40f");
@@ -1544,6 +1629,7 @@
             targetMonster.destroy();
             ZeldaAudio.sfxTreasure();
             logChat("特技", `💥 【狂擊】一擊必殺 ${deadName2}！+${expGain2}EXP`);
+            questTrackKill(deadName2);
             playerData.lootCount += lootGain2;
             playerData.exp += expGain2;
             showPopText(scene, deadX2, deadY2 - 40, `+${expGain2}EXP`, "#f1c40f");
@@ -2095,6 +2181,301 @@
         if (logD) { logD.innerHTML += line; logD.scrollTop = logD.scrollHeight; }
         const logM = document.getElementById('chat-log-m');
         if (logM) { logM.innerHTML += line; logM.scrollTop = logM.scrollHeight; }
+    }
+
+
+    // ════════════════════════════════════════════════════════════
+    // 📋 任務系統
+    // ════════════════════════════════════════════════════════════
+    const QUEST_DEFS = [
+        {
+            id:'q1', name:'初心者的試煉', icon:'🌲',
+            desc:'擊敗森林中的盜蟲和蝴蝶妖，取得冒險資格。',
+            objectives:[
+                {label:'擊敗盜蟲',    key:'kill_盜蟲',    need:3,  cur:0},
+                {label:'擊敗蝴蝶妖',  key:'kill_蝴蝶妖',  need:2,  cur:0},
+            ],
+            reward:{ zeny:300, exp:80, item:'red_pot_m', itemName:'紅色藥水×3' },
+            minLv:1,
+        },
+        {
+            id:'q2', name:'沼澤清道夫', icon:'🌊',
+            desc:'沼澤中的毒蛙妖在擴張地盤，請清除牠們。',
+            objectives:[
+                {label:'擊敗毒蛙妖',  key:'kill_毒蛙妖',  need:5,  cur:0},
+                {label:'擊敗鱷魚獸',  key:'kill_鱷魚獸',  need:3,  cur:0},
+            ],
+            reward:{ zeny:800, exp:200, item:'blue_pot', itemName:'藍色藥水×5' },
+            minLv:5,
+        },
+        {
+            id:'q3', name:'沙漠商路護衛', icon:'🏜️',
+            desc:'護送商人穿越沙漠，清除威脅道路的沙漠蠍。',
+            objectives:[
+                {label:'擊敗沙漠蠍',  key:'kill_沙漠蠍',  need:6,  cur:0},
+                {label:'擊敗沙暴駝',  key:'kill_沙暴駝',  need:2,  cur:0},
+            ],
+            reward:{ zeny:1500, exp:400, item:'elixir', itemName:'超級加倍劑×2' },
+            minLv:8,
+        },
+        {
+            id:'q4', name:'火山征服者', icon:'🌋',
+            desc:'傳說火山深處有寶藏，先消滅守護的火焰妖！',
+            objectives:[
+                {label:'擊敗火焰妖',  key:'kill_火焰妖',  need:8,  cur:0},
+                {label:'擊敗熔岩龍',  key:'kill_熔岩龍',  need:3,  cur:0},
+            ],
+            reward:{ zeny:4000, exp:1200, item:'scroll_town', itemName:'瞬移卷軸×5' },
+            minLv:15,
+        },
+        {
+            id:'q5', name:'BOSS 討伐令', icon:'❄️',
+            desc:'冰川深處的深淵鯊皇威脅整個王國，請將其擊倒！',
+            objectives:[
+                {label:'擊敗冰晶巨人', key:'kill_冰晶巨人', need:2,  cur:0},
+                {label:'擊敗深淵鯊皇', key:'kill_深淵鯊皇', need:1,  cur:0},
+            ],
+            reward:{ zeny:12000, exp:5000, item:'scroll_town', itemName:'傳說稱號：鯊皇終結者' },
+            minLv:25,
+        },
+    ];
+
+    let activeQuests = [];   // 進行中的任務 [{def, objectives}]
+    let questKillLog = {};   // {monsterName: count}
+
+    function questTrackKill(monsterName) {
+        questKillLog[monsterName] = (questKillLog[monsterName] || 0) + 1;
+        let updated = false;
+        activeQuests.forEach(q => {
+            q.objectives.forEach(obj => {
+                if (obj.key === 'kill_' + monsterName && obj.cur < obj.need) {
+                    obj.cur++;
+                    updated = true;
+                }
+            });
+        });
+        if (updated) {
+            renderQuestTracker();
+            checkQuestComplete();
+        }
+    }
+
+    function checkQuestComplete() {
+        activeQuests = activeQuests.filter(q => {
+            const done = q.objectives.every(o => o.cur >= o.need);
+            if (done) {
+                // 發放獎勵
+                playerData.zeny += q.reward.zeny;
+                playerData.exp  += q.reward.exp;
+                if (q.reward.item === 'red_pot_m')   { playerData.redPotions  = (playerData.redPotions||0) + 3; }
+                if (q.reward.item === 'blue_pot')    { playerData.bluePotions = (playerData.bluePotions||0) + 5; }
+                if (q.reward.item === 'elixir')      { playerData.hp = playerData.maxHp; playerData.sp = playerData.maxSp; }
+                if (q.reward.item === 'scroll_town') { playerData.scrollCount = (playerData.scrollCount||0) + 5; }
+                ZeldaAudio.sfxLevelUp();
+                logChat('任務', '🎉【' + q.name + '】完成！獲得 ' + q.reward.zeny + 'z + ' + q.reward.exp + ' EXP + ' + q.reward.itemName + '！');
+                updateUI();
+                while (playerData.exp >= playerData.nextExp) {
+                    playerData.exp -= playerData.nextExp;
+                    playerData.nextExp = Math.floor(playerData.nextExp * 1.4);
+                    playerData.level++; playerData.points += 4;
+                    playerData.maxHp += 20; playerData.maxSp += 8; playerData.baseAtk += 2;
+                    playerData.hp = playerData.maxHp; playerData.sp = playerData.maxSp;
+                    ZeldaAudio.sfxLevelUp();
+                    logChat('系統', '🎉 Level Up！晉升至 Lv.' + playerData.level + '！');
+                }
+                updateUI();
+                return false;   // 移出 activeQuests
+            }
+            return true;
+        });
+        renderQuestTracker();
+    }
+
+    function renderQuestTracker() {
+        const tracker = document.getElementById('quest-tracker');
+        const qtName  = document.getElementById('qt-name');
+        const qtRows  = document.getElementById('qt-rows');
+        if (activeQuests.length === 0) { tracker.style.display = 'none'; return; }
+        tracker.style.display = 'block';
+        const q = activeQuests[0];
+        qtName.textContent = q.icon + ' ' + q.name;
+        qtRows.innerHTML = q.objectives.map(o => {
+            const done = o.cur >= o.need;
+            return '<div class="qt-row"><span>' + o.label + '</span>' +
+                   '<span class="' + (done ? 'qt-done' : '') + '">' + o.cur + '/' + o.need + (done ? ' ✅' : '') + '</span></div>';
+        }).join('');
+    }
+
+    function openQuestUI() {
+        const shopWin   = document.getElementById('shop-window');
+        const shopTitle = document.getElementById('shop-title');
+        const shopContent = document.getElementById('shop-content');
+        shopWin.style.display = 'flex';
+        shopTitle.textContent = '📋 任務發布欄';
+        const avail = QUEST_DEFS.filter(q => playerData.level >= q.minLv);
+        const activeIds = activeQuests.map(q => q.id);
+        shopContent.innerHTML = avail.map(q => {
+            const isActive = activeIds.includes(q.id);
+            const btnLabel = isActive ? '進行中…' : '接受任務';
+            const btnStyle = isActive ? 'background:#7f8c8d;cursor:default;' : '';
+            const objHtml = q.objectives.map(o => {
+                const aq = activeQuests.find(a => a.id === q.id);
+                const cur = aq ? aq.objectives.find(ao => ao.key === o.key)?.cur || 0 : 0;
+                return '<div style="font-size:9px;color:#bdc3c7;">• ' + o.label + ' (' + cur + '/' + o.need + ')</div>';
+            }).join('');
+            return '<div class="shop-row" style="flex-direction:column;align-items:flex-start;">' +
+                   '<div style="display:flex;justify-content:space-between;width:100%;align-items:center;">' +
+                   '<span class="shop-item-name">' + q.icon + ' ' + q.name +
+                   ' <span style="font-size:9px;color:#aaa;">Lv.' + q.minLv + '+</span></span>' +
+                   '<button class="shop-btn shop-btn-buy" style="' + btnStyle + '" onclick="acceptQuest(\'' + q.id + '\')">' + btnLabel + '</button>' +
+                   '</div><div class="shop-item-desc" style="margin:3px 0;">' + q.desc + '</div>' +
+                   objHtml +
+                   '<div style="font-size:9px;color:#f39c12;margin-top:3px;">獎勵: ' + q.reward.zeny + 'z + ' + q.reward.exp + 'EXP + ' + q.reward.itemName + '</div>' +
+                   '</div>';
+        }).join('') || '<div style="color:#aaa;text-align:center;padding:20px;">目前沒有適合你等級的任務</div>';
+    }
+
+    function acceptQuest(qid) {
+        if (activeQuests.find(q => q.id === qid)) return;
+        const def = QUEST_DEFS.find(q => q.id === qid);
+        if (!def) return;
+        // 深拷貝 objectives
+        const copy = { ...def, objectives: def.objectives.map(o => ({ ...o, cur: 0 })) };
+        activeQuests.push(copy);
+        logChat('任務', '📋 接受任務【' + def.name + '】！');
+        ZeldaAudio.sfxNpc();
+        renderQuestTracker();
+        openQuestUI();
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // 🔄 交易系統
+    // ════════════════════════════════════════════════════════════
+    let tradeState = {
+        targetAI: null,
+        myZeny: 0,
+        aiZeny: 0,
+        myItems: [],   // [{name, emoji, qty}]
+        aiItems: [],
+    };
+
+    function openTradeUI() {
+        // 找最近的 AI 玩家作為交易對象
+        const nearby = aiPlayers.find(ai =>
+            ai.active && Phaser.Math.Distance.Between(player.x, player.y, ai.x, ai.y) < 300
+        );
+        tradeState.targetAI = nearby || aiPlayers[0];
+        tradeState.myZeny = 0; tradeState.aiZeny = 0;
+        tradeState.myItems = []; tradeState.aiItems = [];
+
+        // AI 隨機提供部分物品
+        if (tradeState.targetAI) {
+            const d = tradeState.targetAI._data;
+            if (d.loot > 0) tradeState.aiItems.push({ name:'結晶', emoji:'💎', qty: Math.ceil(d.loot / 2) });
+            tradeState.aiZeny = Math.floor(d.zeny * 0.1);
+        }
+
+        document.getElementById('trade-window').style.display = 'flex';
+        renderTradeUI();
+    }
+
+    function closeTrade() {
+        document.getElementById('trade-window').style.display = 'none';
+    }
+
+    function renderTradeUI() {
+        const ai = tradeState.targetAI;
+        const d  = ai ? ai._data : null;
+
+        // 我方物品列表
+        document.getElementById('trade-my-items').innerHTML =
+            [
+                { name:'紅水', emoji:'❤️', qty: playerData.redPotions||0, key:'red' },
+                { name:'藍水', emoji:'💧', qty: playerData.bluePotions||0, key:'blue' },
+                { name:'結晶', emoji:'💎', qty: playerData.lootCount||0,  key:'loot' },
+                { name:'卷軸', emoji:'📜', qty: playerData.scrollCount||0, key:'scroll' },
+            ].filter(item => item.qty > 0).map(item => {
+                const inOffer = tradeState.myItems.find(i => i.name === item.name);
+                const offerQty = inOffer ? inOffer.qty : 0;
+                return '<div class="trade-slot">' +
+                    item.emoji + ' ' + item.name + ' ×' + item.qty +
+                    (offerQty > 0 ? ' <span style="color:#f39c12;">(提供' + offerQty + ')</span>' : '') +
+                    '<button class="trade-add-btn" onclick="tradeAddItem(\'' + item.name + '\',\'' + item.emoji + '\')">+提供</button>' +
+                    '</div>';
+            }).join('') || '<div style="color:#aaa;font-size:10px;padding:4px;">背包空空如也</div>';
+
+        // 我方 Zeny
+        document.getElementById('trade-my-zeny').innerHTML = '💰 提供：<b>' + tradeState.myZeny + ' z</b>';
+
+        // AI 方物品
+        document.getElementById('trade-ai-items').innerHTML =
+            tradeState.aiItems.map(item =>
+                '<div class="trade-slot">' + item.emoji + ' ' + item.name + ' ×' + item.qty + '</div>'
+            ).join('') || '<div style="color:#aaa;font-size:10px;padding:4px;">對方沒有物品</div>';
+
+        const aiName = ai ? ai._name : 'AI';
+        document.getElementById('trade-ai-zeny').innerHTML = '💰 ' + aiName + ' 提供：<b>' + tradeState.aiZeny + ' z</b>';
+    }
+
+    function tradeAddItem(name, emoji) {
+        const inv = {
+            '紅水': playerData.redPotions || 0,
+            '藍水': playerData.bluePotions || 0,
+            '結晶': playerData.lootCount || 0,
+            '卷軸': playerData.scrollCount || 0,
+        };
+        const total = inv[name] || 0;
+        const already = tradeState.myItems.find(i => i.name === name);
+        const offering = already ? already.qty : 0;
+        if (offering >= total) { document.getElementById('trade-status').textContent = '❌ 已全部加入'; return; }
+        if (already) { already.qty++; }
+        else { tradeState.myItems.push({ name, emoji, qty: 1 }); }
+        renderTradeUI();
+    }
+
+    function tradeAddZeny() {
+        const amount = parseInt(document.getElementById('trade-zeny-input').value) || 0;
+        if (amount <= 0) return;
+        if (amount > playerData.zeny) { document.getElementById('trade-status').textContent = '❌ Zeny 不足'; return; }
+        tradeState.myZeny = amount;
+        renderTradeUI();
+    }
+
+    function confirmTrade() {
+        const ai = tradeState.targetAI;
+        if (!ai) { document.getElementById('trade-status').textContent = '❌ 找不到交易對象'; return; }
+        const d = ai._data;
+
+        // 扣除玩家資源
+        playerData.zeny -= tradeState.myZeny;
+        tradeState.myItems.forEach(item => {
+            if (item.name === '紅水')   playerData.redPotions  = Math.max(0, (playerData.redPotions||0)  - item.qty);
+            if (item.name === '藍水')   playerData.bluePotions = Math.max(0, (playerData.bluePotions||0) - item.qty);
+            if (item.name === '結晶')   playerData.lootCount   = Math.max(0, (playerData.lootCount||0)   - item.qty);
+            if (item.name === '卷軸')   playerData.scrollCount = Math.max(0, (playerData.scrollCount||0) - item.qty);
+        });
+
+        // 玩家收到 AI 的物品
+        playerData.zeny += tradeState.aiZeny;
+        tradeState.aiItems.forEach(item => {
+            if (item.name === '結晶') playerData.lootCount = (playerData.lootCount||0) + item.qty;
+        });
+
+        // AI 收到玩家物品/Zeny
+        d.zeny = Math.max(0, d.zeny - tradeState.aiZeny);
+        d.zeny += tradeState.myZeny;
+        tradeState.aiItems.forEach(item => { if (item.name === '結晶') d.loot = Math.max(0, d.loot - item.qty); });
+        tradeState.myItems.forEach(item => { if (item.name === '紅水') d.redPots = (d.redPots||0) + item.qty; });
+
+        ZeldaAudio.sfxBuy();
+        const summary = (tradeState.myZeny > 0 ? tradeState.myZeny + 'z + ' : '') +
+                        tradeState.myItems.map(i => i.emoji + i.qty).join('+') + ' ⇄ ' +
+                        (tradeState.aiZeny > 0 ? tradeState.aiZeny + 'z + ' : '') +
+                        tradeState.aiItems.map(i => i.emoji + i.qty).join('+');
+        logChat('交易', '🔄 與【' + ai._name + '】交易完成！' + summary);
+        document.getElementById('trade-status').textContent = '✅ 交易完成！';
+        updateUI();
+        setTimeout(closeTrade, 1500);
     }
 
     // 首次互動時啟動 BGM（瀏覽器需要使用者手勢）
