@@ -690,7 +690,7 @@
             if (!game) return;
             const g = document.getElementById('game-container');
             const nw = g.clientWidth, nh = g.clientHeight;
-            if (nw > 10 && nh > 10) game.scale.resize(nw, nh);
+            if (nw > 10 && nh > 10 && game) game.scale.resize(nw, nh);
         });
     }
 
@@ -962,6 +962,7 @@
 
         // 戰鬥常規檢索 (城鎮外有效)
         monsters.getChildren().forEach(monster => {
+            if (!monster.active) return;
             if (!monster.active) return;
             if (Phaser.Math.Distance.Between(player.x, player.y, monster.x, monster.y) < 65) {
                 handleBattleLoop(this, player, playerData, monster, time, true);
@@ -1450,11 +1451,12 @@
 
     // --- 經典戰鬥與狂擊特技系統 ---
     function handleBattleLoop(scene, attacker, attData, monster, currentTime, isPlayer) {
+        if (!monster.active) return;
         if (currentTime - attData.lastAttackTime > attData.attackCooldown) {
             attData.lastAttackTime = currentTime;
             const dmg = Phaser.Math.Between(attData.baseAtk + attData.str - 2, attData.baseAtk + attData.str + 3) + (isPlayer ? playerData.bonusAtk : 0);
             monster.hp -= dmg;
-            monster.hpText.setText(`HP: ${monster.hp > 0 ? monster.hp : 0}`);
+            if (monster.active && monster.hpText) monster.hpText.setText(`HP: ${monster.hp > 0 ? monster.hp : 0}`);
             showPopText(scene, monster.x, monster.y - 20, dmg, "#f1c40f");
 
             if (monster.hp > 0) {
@@ -1529,7 +1531,7 @@
 
         const skillDmg = Math.floor((playerData.baseAtk + playerData.str + playerData.bonusAtk) * 2.5);
         targetMonster.hp -= skillDmg;
-        targetMonster.hpText.setText(`HP: ${targetMonster.hp > 0 ? targetMonster.hp : 0}`);
+        if (targetMonster.active && targetMonster.hpText) targetMonster.hpText.setText(`HP: ${targetMonster.hp > 0 ? targetMonster.hp : 0}`);
         showPopText(scene, targetMonster.x, targetMonster.y - 30, `💥 ${skillDmg}`, "#3498db");
         logChat("特技", `⚔️ 施展【狂擊】重創 ${targetMonster.monsterName} 造成 ${skillDmg} 點傷害！`);
 
@@ -1911,31 +1913,41 @@
                 });
 
                 if (nearest && minDist < 400) {
-                    aiSay(ai, `⚔️ 打 ${nearest.monsterName}！`);
-                    await aiMoveTo(scene, ai, nearest.x, nearest.y, spd);
+                    // 先存所有需要的值，await 期間怪物可能已被其他人打死
+                    const nearestName = nearest.monsterName || "怪物";
+                    const nearestTX   = nearest.x;
+                    const nearestTY   = nearest.y;
+                    aiSay(ai, `⚔️ 打 ${nearestName}！`);
+                    await aiMoveTo(scene, ai, nearestTX, nearestTY, spd);
+
+                    // await 結束後再確認怪物仍存活
+                    if (!nearest.active) { nearest = null; continue; }
 
                     // 攻打迴圈
                     while (ai.active && nearest.active && d.hp > d.maxHp * 0.2) {
                         const atk = (d.baseAtk + d.bonusAtk) + Phaser.Math.Between(-3, 5);
+                        const nx = nearest.x, ny = nearest.y;   // 先存座標
                         nearest.hp -= atk;
                         ZeldaAudio.sfxAttack();
-                        showPopText(scene, nearest.x, nearest.y - 20, `-${atk}`, "#f1c40f");
+                        showPopText(scene, nx, ny - 20, `-${atk}`, "#f1c40f");
                         if (nearest.hp <= 0) {
                             nearest.hp = 0;
                             d.loot += Phaser.Math.Between(1, 3);
                             d.exp  += Phaser.Math.Between(15, 30);
                             ZeldaAudio.sfxTreasure();
-                            nearest.destroy();
-                            setTimeout(() => spawnMonster(scene), 4000);
+                            nearest.destroy();   // destroy 後不再用 nearest.*
+                            setTimeout(() => { try { spawnMonster(scene); } catch(e){} }, 4000);
                             kills++;
                             break;
                         }
-                        // 被怪反擊
-                        const def = d.bonusDef;
-                        const dmg = Math.max(1, Phaser.Math.Between(3, 8) - def);
-                        d.hp = Math.max(0, d.hp - dmg);
-                        ZeldaAudio.sfxHurt();
-                        updateAISprite(ai);
+                        // 被怪反擊（確認怪物仍 active）
+                        if (nearest.active) {
+                            const def = d.bonusDef;
+                            const dmg = Math.max(1, Phaser.Math.Between(3, 8) - def);
+                            d.hp = Math.max(0, d.hp - dmg);
+                            ZeldaAudio.sfxHurt();
+                            updateAISprite(ai);
+                        }
                         await new Promise(r => setTimeout(r, 700));
                     }
 
