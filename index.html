@@ -142,6 +142,20 @@
         .shop-btn-buy { background: linear-gradient(135deg, #e67e22, #ca6f1e); }
         .shop-btn-sell { background: linear-gradient(135deg, #2980b9, #1f6ea8); }
         .shop-close-btn { background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        /* ── 小地圖 ── */
+        #minimap-canvas {
+            position: fixed; bottom: 10px; right: 10px;
+            width: 120px; height: 120px;
+            border: 2px solid #4a6d96; border-radius: 6px;
+            background: rgba(10,20,40,0.85); z-index: 180;
+            image-rendering: pixelated;
+        }
+        #minimap-label {
+            position: fixed; bottom: 133px; right: 10px;
+            font-size: 9px; color: #aed6f1; z-index: 181;
+            background: rgba(10,20,40,0.7); padding: 1px 6px;
+            border-radius: 3px; pointer-events: none;
+        }
         .grade { display: inline-block; font-size: 9px; font-weight: bold; border-radius: 3px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
         .grade-normal  { background: #7f8c8d; color: #fff; }
         .grade-magic   { background: #2980b9; color: #fff; }
@@ -295,6 +309,9 @@
 <div id="game-container"></div>
 
 <!-- 任務追蹤條（頂部中央） -->
+<div id="minimap-label">🗺️ 小地圖</div>
+<canvas id="minimap-canvas" width="120" height="120" title="小地圖"></canvas>
+
 <div id="quest-tracker">
     <div class="qt-title">📜 <span id="qt-name">—</span></div>
     <div id="qt-rows"></div>
@@ -453,7 +470,8 @@
 
         <!-- 右：動作按鈕 -->
         <div id="bottom-actions">
-            <button class="mobile-action-btn btn-skill" onclick="triggerBashSkill()">⚡<br>狂擊</button>
+            <button class="mobile-action-btn btn-skill" onclick="triggerBashSkill()" style="font-size:8px;">⚡<br>狂擊</button>
+            <button class="mobile-action-btn btn-skill" onclick="useClassSkill()" style="background:linear-gradient(135deg,#8e44ad,#6c3483);font-size:8px;">🎓<br>職業技</button>
             <button class="mobile-action-btn btn-hp-pot" onclick="useRedPotion()">❤️<br>紅水</button>
             <button class="mobile-action-btn btn-sp-pot" onclick="useBluePotion()">💧<br>藍水</button>
         </div>
@@ -931,6 +949,15 @@
         mountNpc.setData('type', 'mount');
         npcs.add(mountNpc);
 
+        // 職業選擇 NPC
+        const classNpc = scene.add.container(220, 150);
+        classNpc.add(scene.add.text(-20,-20,'🎓',{font:'36px Arial'}));
+        classNpc.add(scene.add.text(-38,20,'職業顧問',{font:'bold 12px Arial',fill:'#e74c3c',backgroundColor:'#000'}));
+        scene.physics.world.enable(classNpc,Phaser.Physics.Arcade.STATIC_BODY);
+        classNpc.body.setSize(50,50);
+        classNpc.setData('type','classSelect');
+        npcs.add(classNpc);
+
         // 任務發布員（公告欄）
         const questNpc = scene.add.container(130, 150);
         questNpc.add(scene.add.text(-20,-20,'📋',{font:'36px Arial'}));
@@ -1011,6 +1038,9 @@
         logChat("系統", "歡迎來到普隆德拉邊境！走到 NPC 商人身邊即可開啟買賣介面。");
         initPuterAIPlayers(scene);
         
+        // 啟動小地圖
+        setupMinimap(scene);
+
         // 初始化 Google API 機制（本地端 / 無網路時安全跳過）
         try { if (typeof gapi !== 'undefined') gapiLoaded(); } catch(e) {}
         try { if (typeof google !== 'undefined' && google.accounts) gisLoaded(); } catch(e) {}
@@ -1058,8 +1088,9 @@
         targetPointer = null;
         const type = npcEntity.getData('type');
         ZeldaAudio.sfxNpc();
-        if (type === 'quest')  { openQuestUI(); return; }
-        if (type === 'trade')  { openTradeUI(); return; }
+        if (type === 'quest')       { openQuestUI(); return; }
+        if (type === 'trade')       { openTradeUI(); return; }
+        if (type === 'classSelect') { openClassSelectUI(); return; }
         openShopUI(type);
     }
 
@@ -1538,10 +1569,21 @@
         if (!monster.active) return;
         if (currentTime - attData.lastAttackTime > attData.attackCooldown) {
             attData.lastAttackTime = currentTime;
-            const dmg = Phaser.Math.Between(attData.baseAtk + attData.str - 2, attData.baseAtk + attData.str + 3) + (isPlayer ? playerData.bonusAtk : 0);
+            // STR 提升攻擊，AGI 提供暴擊率，暴擊傷害 ×1.8
+        const strBonus   = isPlayer ? playerData.str : (attData.str || 0);
+        const weapBonus  = isPlayer ? playerData.bonusAtk : (attData.bonusAtk || 0);
+        const critChance = isPlayer ? Math.min(60, Math.floor(playerData.agi / 10) * 5) : 5;
+        const isCrit     = Math.random() * 100 < critChance;
+        let dmg = Phaser.Math.Between(
+            attData.baseAtk + strBonus - 2 + weapBonus,
+            attData.baseAtk + strBonus + 5 + weapBonus
+        );
+        if (isCrit) { dmg = Math.floor(dmg * 1.8); }
             monster.hp -= dmg;
             if (monster.active && monster.hpText) monster.hpText.setText(`HP: ${monster.hp > 0 ? monster.hp : 0}`);
-            showPopText(scene, monster.x, monster.y - 20, dmg, "#f1c40f");
+            const popColor = isCrit ? "#ff4757" : "#f1c40f";
+        const popLabel = isCrit ? `💥${dmg}!` : `${dmg}`;
+        showPopText(scene, monster.x, monster.y - 20, popLabel, popColor);
 
             if (monster.hp > 0) {
                 ZeldaAudio.sfxAttack();
@@ -1554,10 +1596,30 @@
                 showPopText(scene, player.x, player.y - 20, monsterDmg, "#e74c3c");
                 
                 if(playerData.hp <= 0) {
-                    player.setPosition(200, 300); // 死亡直接回城鎮安全區
-                    playerData.hp = playerData.maxHp;
-                    logChat("系統", "💀 不幸力竭，已被緊急送回普隆德拉安全區。");
+                    playerData.hp = 0;
+                    ZeldaAudio.sfxDead();
+                    // 死亡懲罰：掉落 10% Zeny
+                    const penalty = Math.floor(playerData.zeny * 0.1);
+                    playerData.zeny = Math.max(0, playerData.zeny - penalty);
+                    // 死亡閃爍動畫
+                    let blinks = 0;
+                    const blinkTimer = setInterval(() => {
+                        player.setAlpha(player.alpha < 1 ? 1 : 0.2);
+                        if (++blinks >= 8) {
+                            clearInterval(blinkTimer);
+                            player.setAlpha(1);
+                            player.setPosition(220, 300);
+                            playerData.hp = Math.floor(playerData.maxHp * 0.3);
+                            playerData.sp = playerData.maxSp;
+                            updateUI();
+                        }
+                    }, 200);
+                    logChat("系統", penalty > 0
+                        ? `💀 力竭倒下！掉落 ${penalty}z，送回安全區（HP 30% 復活）。`
+                        : "💀 力竭倒下！送回安全區（HP 30% 復活）。"
+                    );
                     updateUI();
+                    return;
                 }
             }
 
@@ -2478,6 +2540,203 @@
         setTimeout(closeTrade, 1500);
     }
 
+
+    // ── 小地圖繪製（每 500ms 更新） ──
+    function setupMinimap(scene) {
+        const canvas = document.getElementById('minimap-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const W = 120, H = 120, WORLD = 5000;
+        const sx = W / WORLD, sy = H / WORLD;
+
+        // 區域色塊（對應 6 個地圖區域）
+        const ZONES = [
+            { x:0,   y:0,   w:480,  h:480,  c:'#95a5a6' },  // 城鎮
+            { x:500, y:0,   w:1500, h:1500, c:'#1e8449' },  // 森林
+            { x:0,   y:500, w:1500, h:2000, c:'#1a5276' },  // 沼澤
+            { x:2000,y:500, w:1500, h:2000, c:'#d4ac0d' },  // 沙漠
+            { x:500, y:2500,w:2500, h:2000, c:'#7b241c' },  // 火山
+            { x:3500,y:3500,w:1500, h:1500, c:'#1a252f' },  // 冰川
+        ];
+
+        setInterval(() => {
+            ctx.clearRect(0, 0, W, H);
+            // 背景
+            ctx.fillStyle = '#2d5a27'; ctx.fillRect(0, 0, W, H);
+            // 區域
+            ZONES.forEach(z => {
+                ctx.fillStyle = z.c + '99';
+                ctx.fillRect(z.x*sx, z.y*sy, z.w*sx, z.h*sy);
+            });
+            // NPC（白點）
+            ctx.fillStyle = '#ffffff';
+            [[175,200],[280,180],[215,280],[340,230],[130,150],[320,150]].forEach(([nx,ny]) => {
+                ctx.beginPath(); ctx.arc(nx*sx, ny*sy, 1.5, 0, Math.PI*2); ctx.fill();
+            });
+            // 怪物（紅點，大小依強度）
+            if (typeof monsters !== 'undefined') {
+                monsters.getChildren().forEach(m => {
+                    if (!m.active) return;
+                    const sz = m.maxHp > 500 ? 3 : m.maxHp > 200 ? 2 : 1.5;
+                    ctx.fillStyle = m.maxHp > 500 ? '#ff0000' : '#ff6b6b';
+                    ctx.beginPath(); ctx.arc(m.x*sx, m.y*sy, sz, 0, Math.PI*2); ctx.fill();
+                });
+            }
+            // AI 玩家（黃點）
+            if (typeof aiPlayers !== 'undefined') {
+                aiPlayers.forEach(ai => {
+                    if (!ai.active) return;
+                    ctx.fillStyle = '#f39c12';
+                    ctx.beginPath(); ctx.arc(ai.x*sx, ai.y*sy, 2, 0, Math.PI*2); ctx.fill();
+                });
+            }
+            // 玩家（亮藍大點）
+            if (typeof player !== 'undefined' && player) {
+                ctx.fillStyle = '#00d2ff';
+                ctx.beginPath(); ctx.arc(player.x*sx, player.y*sy, 3, 0, Math.PI*2); ctx.fill();
+                // 視野框
+                ctx.strokeStyle = '#00d2ff55';
+                ctx.strokeRect((player.x-200)*sx, (player.y-150)*sy, 400*sx, 300*sy);
+            }
+        }, 500);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // ⚔️ 職業系統
+    // ════════════════════════════════════════════════════════════
+    const CLASS_DEFS = {
+        swordsman: { name:'劍士', icon:'⚔️', color:'#e74c3c',
+            str:10, agi:5, vit:8, baseAtk:14, maxHp:140, maxSp:30,
+            skill:'重劍斬', skillDesc:'爆發單體高傷（ATK×3）', skillSp:12 },
+        mage:      { name:'法師', icon:'🔮', color:'#8e44ad',
+            str:4, agi:6, vit:3, baseAtk:8, maxHp:80, maxSp:80,
+            skill:'火球術', skillDesc:'範圍魔法攻擊（ATK×2.5 魔法傷害）', skillSp:18 },
+        archer:    { name:'弓手', icon:'🏹', color:'#27ae60',
+            str:6, agi:12, vit:4, baseAtk:11, maxHp:100, maxSp:40,
+            skill:'連射', skillDesc:'連續2次攻擊（各ATK×1.2）', skillSp:8 },
+        thief:     { name:'盜賊', icon:'🗡️', color:'#f39c12',
+            str:7, agi:14, vit:3, baseAtk:10, maxHp:90, maxSp:35,
+            skill:'背刺', skillDesc:'暴擊率×2倍，傷害×2.5', skillSp:10 },
+        priest:    { name:'牧師', icon:'✨', color:'#3498db',
+            str:3, agi:5, vit:10, baseAtk:7, maxHp:120, maxSp:100,
+            skill:'聖光治癒', skillDesc:'恢復 HP 60%', skillSp:20 },
+    };
+
+    let playerClass = null;
+
+    function openClassSelectUI() {
+        const shopWin = document.getElementById('shop-window');
+        const shopTitle = document.getElementById('shop-title');
+        const shopContent = document.getElementById('shop-content');
+        shopWin.style.display = 'flex';
+        shopTitle.textContent = '⚔️ 選擇你的職業';
+        shopContent.innerHTML = Object.entries(CLASS_DEFS).map(([key, cls]) => {
+            const isSelected = playerClass === key;
+            return '<div class="shop-row ' + (isSelected ? 'row-epic' : '') + '" style="flex-direction:column;align-items:flex-start;">'
+                + '<div style="display:flex;justify-content:space-between;width:100%;align-items:center;">'
+                + '<span class="shop-item-name" style="color:' + cls.color + ';font-size:14px;">' + cls.icon + ' ' + cls.name + '</span>'
+                + '<button class="shop-btn shop-btn-buy" ' + (isSelected ? 'style="background:#7f8c8d;"' : '') + ' onclick="selectClass(\'' + key + '\')">' + (isSelected ? '✅ 已選' : '選擇') + '</button>'
+                + '</div>'
+                + '<div class="shop-item-desc">STR:' + cls.str + ' AGI:' + cls.agi + ' VIT:' + cls.vit + ' HP:' + cls.maxHp + ' SP:' + cls.maxSp + '</div>'
+                + '<div style="font-size:9px;color:#f39c12;margin-top:2px;">技能：' + cls.skill + '—' + cls.skillDesc + '</div>'
+                + '</div>';
+        }).join('');
+    }
+
+    function selectClass(key) {
+        const cls = CLASS_DEFS[key];
+        if (!cls) return;
+        playerClass = key;
+        playerData.str = cls.str; playerData.agi = cls.agi; playerData.vit = cls.vit;
+        playerData.baseAtk = cls.baseAtk;
+        playerData.maxHp = cls.maxHp; playerData.hp = cls.maxHp;
+        playerData.maxSp = cls.maxSp; playerData.sp = cls.maxSp;
+        ZeldaAudio.sfxLevelUp();
+        logChat('系統', '✅ 職業確定：' + cls.icon + ' ' + cls.name + '！技能【' + cls.skill + '】解鎖！');
+        updateUI();
+        openClassSelectUI();  // 刷新顯示
+    }
+
+    // 職業技能施展
+    function useClassSkill() {
+        if (!playerClass) { logChat('系統', '❌ 尚未選擇職業！'); ZeldaAudio.sfxError(); return; }
+        const cls = CLASS_DEFS[playerClass];
+        if (playerData.sp < cls.skillSp) { logChat('技能', '❌ SP 不足（需要 ' + cls.skillSp + ' SP）'); ZeldaAudio.sfxError(); return; }
+        playerData.sp -= cls.skillSp;
+        const scene = game && game.scene ? game.scene.scenes[0] : null;
+        if (!scene) return;
+
+        if (playerClass === 'swordsman') {
+            // 重劍斬：單體高傷
+            const t = getNearestMonster(scene);
+            if (t) { const d = Math.floor((playerData.baseAtk + playerData.str + playerData.bonusAtk) * 3);
+                t.hp -= d; showPopText(scene, t.x, t.y-30, '⚔️'+d, '#e74c3c'); checkMonsterDeath(scene, t); }
+        } else if (playerClass === 'mage') {
+            // 火球術：範圍傷害
+            ZeldaAudio.sfxBash();
+            monsters.getChildren().filter(m => m.active &&
+                Phaser.Math.Distance.Between(player.x,player.y,m.x,m.y) < 200
+            ).forEach(m => {
+                const d = Math.floor((playerData.baseAtk + playerData.bonusAtk) * 2.5);
+                m.hp -= d; showPopText(scene, m.x, m.y-30, '🔥'+d, '#e67e22'); checkMonsterDeath(scene, m);
+            });
+        } else if (playerClass === 'archer') {
+            // 連射：兩次攻擊
+            const t = getNearestMonster(scene);
+            if (t) { [0,200].forEach(delay => setTimeout(() => {
+                if (!t.active) return;
+                const d = Math.floor((playerData.baseAtk + playerData.str + playerData.bonusAtk) * 1.2);
+                t.hp -= d; showPopText(scene, t.x, t.y-30, '🏹'+d, '#2ecc71'); checkMonsterDeath(scene, t);
+            }, delay)); }
+        } else if (playerClass === 'thief') {
+            // 背刺：必暴擊 ×2.5
+            const t = getNearestMonster(scene);
+            if (t) { const d = Math.floor((playerData.baseAtk + playerData.str + playerData.bonusAtk) * 2.5);
+                t.hp -= d; showPopText(scene, t.x, t.y-30, '🗡️💥'+d, '#f39c12'); checkMonsterDeath(scene, t); }
+        } else if (playerClass === 'priest') {
+            // 聖光治癒：回復 60% HP
+            const healAmt = Math.floor(playerData.maxHp * 0.6);
+            playerData.hp = Math.min(playerData.maxHp, playerData.hp + healAmt);
+            ZeldaAudio.sfxHeal();
+            showPopText(scene, player.x, player.y-30, '✨+'+healAmt, '#3498db');
+            logChat('技能', '✨ 聖光治癒！恢復 ' + healAmt + ' HP！');
+        }
+        ZeldaAudio.sfxAttack();
+        updateUI();
+    }
+
+    function getNearestMonster(scene) {
+        let nearest = null, minDist = 9999;
+        monsters.getChildren().forEach(m => {
+            if (!m.active) return;
+            const d = Phaser.Math.Distance.Between(player.x,player.y,m.x,m.y);
+            if (d < 300 && d < minDist) { minDist = d; nearest = m; }
+        });
+        return nearest;
+    }
+
+    function checkMonsterDeath(scene, m) {
+        if (!m.active || m.hp > 0) return;
+        const deadName = m.monsterName; const deadX = m.x; const deadY = m.y;
+        const lootGain = m.lootDrop || 1; const expGain = m.exp || 8;
+        m.destroy();
+        ZeldaAudio.sfxTreasure();
+        playerData.lootCount += lootGain; playerData.exp += expGain;
+        questTrackKill(deadName);
+        showPopText(scene, deadX, deadY-40, '+'+expGain+'EXP', '#f1c40f');
+        logChat('系統', '⚔️ 擊敗了 ' + deadName + '！');
+        while (playerData.exp >= playerData.nextExp) {
+            playerData.exp -= playerData.nextExp;
+            playerData.nextExp = Math.floor(playerData.nextExp * 1.4);
+            playerData.level++; playerData.points += 4;
+            playerData.maxHp += 20; playerData.maxSp += 8; playerData.baseAtk += 2;
+            playerData.hp = playerData.maxHp; playerData.sp = playerData.maxSp;
+            ZeldaAudio.sfxLevelUp();
+            logChat('系統', '🎉 Level Up！Lv.' + playerData.level);
+        }
+        updateUI();
+        setTimeout(() => { try { spawnMonster(scene); } catch(e){} }, 3000);
+    }
     // 首次互動時啟動 BGM（瀏覽器需要使用者手勢）
     function toggleAudioMute() {
         const muted = ZeldaAudio.toggleMute();
@@ -2527,6 +2786,7 @@
             maxHp: playerData.maxHp,
             sp: playerData.sp,
             maxSp: playerData.maxSp,
+            playerClass: playerClass || null,
             str: playerData.str,
             agi: playerData.agi,
             vit: playerData.vit,
@@ -2566,6 +2826,7 @@
             playerData.maxHp = data.maxHp;
             playerData.sp = data.sp;
             playerData.maxSp = data.maxSp;
+            if (data.playerClass) { playerClass = data.playerClass; selectClass(data.playerClass); }
             playerData.str = data.str;
             playerData.agi = data.agi;
             playerData.vit = data.vit;
